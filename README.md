@@ -41,6 +41,7 @@ If a valid container id/name is specified, then its IPv4 will be always aliased 
 	docker add-internal container-id --source=(1.2.3.4|.|container-id|/) [--rev-lookup] [--sport=xxxx] --dest=(1.2.3.4|.|container-id|/) --dport=xxxx [--protocol=(tcp|udp)] [--filter="-i docker0 -o docker0"]
 
 Some rules to use 'add' or 'add-internal':
+- address specifications (source/destination) can also be in IPv4 subnet notation
 - specifying --dport is mandatory for 'add-internal' action.
 - protocol default is 'tcp'.
 - at least source or destination must be equivalent to '.' (container for which rule is being specified), but cannot be both. If no destination is specified, '.' is assumed.
