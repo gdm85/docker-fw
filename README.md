@@ -1,7 +1,7 @@
 Docker-fw
 =========
 
-docker-fw is a complementary tool for [Docker](https://docker.com/) to easily manage custom firewall rules between/towards Docker containers, and features persistence so that users can easily restore such firewall rules.
+docker-fw is a complementary tool for [Docker](https://docker.com/) to manage custom firewall rules between/towards Docker containers, and features persistence so that users can easily restore such firewall rules.
 
 In order to use docker-fw, you need all of the following:
 - your firewall must be using the ``*filter FORWARD`` chain with a default policy of REJECT/DROP (or an equivalent bottom rule)
