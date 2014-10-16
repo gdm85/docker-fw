@@ -34,6 +34,8 @@ import (
 const (
 	VERSION   = "0.1.0"
 	ADDR_SPEC = "Can be either an IPv4 address, a subnet, one of the special aliases ('.' = container IPv4, '/' = docker host IPv4) or a container id. If an IPv4 address is specified and no subnet, '/32' will be added. Default is '.'"
+	// directly from Docker
+	validContainerNameChars = `[a-zA-Z0-9][a-zA-Z0-9_.-]`
 )
 
 type Action struct {
@@ -46,15 +48,9 @@ type Action struct {
 	sourcePort, destPort        uint16
 }
 
-var containerIdMatch *regexp.Regexp
-
-func init() {
-	var err error
-	containerIdMatch, err = regexp.Compile("^[0-9a-zA-Z_]+$")
-	if err != nil {
-		panic(err)
-	}
-}
+var (
+	containerIdMatch = regexp.MustCompile(`^/?` + validContainerNameChars + `+$`)
+)
 
 func NewAction(action string, allowParseNames bool) *Action {
 	var a Action
