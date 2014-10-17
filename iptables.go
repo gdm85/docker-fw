@@ -56,6 +56,16 @@ type ActiveIptablesRule struct {
 	JumpTo string
 }
 
+func (r *ActiveIptablesRule) Position() int {
+	if r.Chain == "FORWARD" {
+		return 2
+	} else if r.Chain == "INPUT" {
+		return 1
+	} else {
+		panic("Cannot determine position for chain " + r.Chain)
+	}
+}
+
 var matchIpv4 *regexp.Regexp
 var ccl *CachedContainerLookup
 
@@ -149,6 +159,12 @@ func InitializeFirewall() error {
 	rule := "FORWARD -o docker0 -j DOCKER"
 	if RuleExists(rule) {
 		err := internalDelete(rule, false)
+		if err != nil {
+			return err
+		}
+
+		// insert new rule for internal docker traffic on top
+		err = internalInsert(1, "FORWARD -i docker0 -o docker0 -j DOCKER")
 		if err != nil {
 			return err
 		}
@@ -283,7 +299,7 @@ func addFirewallRule(container *docker.Container, iptRule *IptablesRule) error {
 
 	// add always on top
 	// NOTE: the catchall "-o docker0 -j DOCKER" must *not* exist in table
-	err := internalInsert(1, addedRule.Format())
+	err := internalInsert(addedRule.Position(), addedRule.Format())
 	if err != nil {
 		return err
 	}
@@ -301,7 +317,7 @@ func AddInternalRule(cid string, iptRule *IptablesRule) error {
 	addedRule := ActiveIptablesRule{Chain: "INPUT", JumpTo: "ACCEPT"}
 	addedRule.IptablesRule = *iptRule
 
-	err = internalInsert(1, addedRule.Format())
+	err = internalInsert(addedRule.Position(), addedRule.Format())
 	if err != nil {
 		return err
 	}
@@ -508,7 +524,7 @@ func ReplayRules(containerIds []string) error {
 			if RuleExists(rule) {
 				fmt.Printf("iptables: rule '%s' already exists", rule)
 			} else {
-				err := internalInsert(1, rule)
+				err := internalInsert(r.Position(), rule)
 				if err != nil {
 					return err
 				}

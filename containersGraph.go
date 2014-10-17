@@ -177,7 +177,7 @@ func StartContainers(containerIds []string, paused, pullDeps bool) error {
 
 	dryRun := false
 
-	for i:=len(result.Leaves)-1;i>=0;i-- {
+	for i := len(result.Leaves) - 1; i >= 0; i-- {
 		node := result.Leaves[i]
 		if dryRun {
 			fmt.Printf("%s\n", node.Self.Name[1:])
