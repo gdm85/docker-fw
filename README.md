@@ -1,13 +1,20 @@
 Docker-fw
 =========
 
-docker-fw is a complementary tool for [Docker](https://docker.com/) to manage custom firewall rules between/towards Docker containers, and features persistence so that users can easily restore such firewall rules.
+docker-fw is a complementary tool for [Docker](https://docker.com/) to manage internal firewall rules between Docker containers or rules from other subnets targeting them; it features persistence to allow users restoring such firewall rules, whatever level of complexity they get.
 
 In order to use docker-fw, you need all of the following:
 - your firewall must be using the ``*filter FORWARD`` chain with a default policy of REJECT/DROP (or an equivalent bottom rule)
 - a custom Docker with [PR #7003](https://github.com/docker/docker/pull/7003) (information on this page will be updated accordingly if/when the pull request is merged)
 
 Want to contribute? Submit a [pull request](https://github.com/gdm85/docker-fw/pulls) or [create an issue](https://github.com/gdm85/docker-fw/issues/new).
+
+Use-case example
+================
+
+You can make the best out of docker-fw and Docker if you use the ``--restart=always`` option for your containers, that allows persistence of networking configuration across reboots.
+
+In theory you could use docker-fw to completely manage your internal docker0 bridge traffic between containers, but docker-fw will play nicely along with ``--icc=false`` and ``--iptables=true`` options of Docker daemon.
 
 License
 =======
@@ -16,8 +23,10 @@ License
 
 docker-fw is licensed under GNU GPL version 2, see [LICENSE](LICENSE).
 
-Commands
+Actions
 ========
+
+docker-fw supports a few subcommands, called 'actions'.
 
 Init
 ----
@@ -35,7 +44,7 @@ If a valid container id/name is specified, then its IPv4 will be always aliased 
 - `.` to reference the container for which rules are being added
 - `/` to reference the Docker host (usually 172.17.42.1)
 
-**NOTE**: referencing the Docker host `/` is mostly intended for the 'add-internal' action; since it is considered a poor practice to create firewall rules to allow traffic that target the docker host, a warning always be displayed when using it as source or destination of an 'add' action
+**NOTE**: referencing the Docker host `/` is mostly intended for the 'add-internal' action; since it is considered a poor practice to create firewall rules to allow traffic that target the docker host
 
 	docker-fw add container-id --source=(1.2.3.4|.|container-id) [--rev-lookup] [--sport=xxxx] [--dest=(1.2.3.4|.|container-id)] [--dport=xxxx] [--protocol=(tcp|udp)] [--filter="-i docker0 -o docker0"]
 	docker add-internal container-id --source=(1.2.3.4|.|container-id|/) [--rev-lookup] [--sport=xxxx] --dest=(1.2.3.4|.|container-id|/) --dport=xxxx [--protocol=(tcp|udp)] [--filter="-i docker0 -o docker0"]
