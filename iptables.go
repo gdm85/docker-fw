@@ -381,7 +381,7 @@ func (c *IptablesRulesCollection) Save() error {
 
 func DropRules(containerIds []string) error {
 	for _, cid := range containerIds {
-		container, err := ccl.Lookup(cid)
+		container, err := ccl.LookupInert(cid)
 		if err != nil {
 			return err
 		}
