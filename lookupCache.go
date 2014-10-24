@@ -38,12 +38,16 @@ type CachedContainerLookup struct {
 }
 
 func (ccl *CachedContainerLookup) lookupInternal(cid string, mustBeOnline bool) (*docker.Container, error) {
+	if len(cid) == 0 {
+		panic("empty container id passed to lookupInternal")
+	}
+
 	if _, ok := ccl.containers[cid]; !ok {
 		if ccl.loadedAll {
 			return nil, errors.New("container not found in fully preloaded cache: " + cid)
 		}
 
-		err := ccl.RefreshContainer(cid, mustBeOnline)
+		err := ccl.fullRefreshContainer(cid, mustBeOnline)
 		if err != nil {
 			return nil, err
 		}
@@ -52,7 +56,7 @@ func (ccl *CachedContainerLookup) lookupInternal(cid string, mustBeOnline bool) 
 	return ccl.containers[cid], nil
 }
 
-func (ccl *CachedContainerLookup) refreshContainer(id string, mustBeOnline bool) error {
+func (ccl *CachedContainerLookup) fullRefreshContainer(id string, mustBeOnline bool) error {
 	// pull new inspect data from API
 	container, err := Docker.InspectContainer(id)
 	if err != nil {
@@ -82,7 +86,8 @@ func (ccl *CachedContainerLookup) refreshContainer(id string, mustBeOnline bool)
 }
 
 func (ccl *CachedContainerLookup) RefreshContainer(cid string, mustBeOnline bool) error {
-	err := ccl.refreshContainer(cid, mustBeOnline)
+	// update the entry (forced, no cache applies)
+	err := ccl.fullRefreshContainer(cid, mustBeOnline)
 	if err != nil {
 		return err
 	}
@@ -118,7 +123,7 @@ func (ccl *CachedContainerLookup) LoadAllContainers() error {
 	// map all containers by their ID & name
 	// will overwrite previous entries
 	for _, containerSummary := range containers {
-		err := ccl.refreshContainer(containerSummary.ID, false)
+		err := ccl.fullRefreshContainer(containerSummary.ID, false)
 		if err != nil {
 			return err
 		}

@@ -60,18 +60,23 @@ func NewAction(action string, allowParseNames bool) *Action {
 	a.Action = action
 
 	// define all command line options
-	a.SourceArg = a.CommandSet.StringVarLong(&a.source, "source", 's', ".", "source-specification*")
+	a.SourceArg = a.CommandSet.StringVarLong(&a.source, "source", 's', "source-specification*", ".")
 	a.SourcePortArg = a.CommandSet.Uint16VarLong(&a.sourcePort, "sport", 0, "Source port, optional", "port")
-	a.DestArg = a.CommandSet.StringVarLong(&a.dest, "dest", 'd', ".", "destination-specification*")
+	a.DestArg = a.CommandSet.StringVarLong(&a.dest, "dest", 'd', "destination-specification*", ".")
 	a.DestPortArg = a.CommandSet.Uint16VarLong(&a.destPort, "dport", 0, "Destination port, mandatory only for 'add-internal' action", "port")
 	a.ProtoArg = a.CommandSet.EnumVarLong(&a.proto, "protocol", 'p', []string{"tcp", "udp"}, "The protocol of the packet to check")
-	a.FilterArg = a.CommandSet.StringVarLong(&a.filter, "filter", 0, "", "extra iptables conditions")
+	a.FilterArg = a.CommandSet.StringVarLong(&a.filter, "filter", 0, "extra iptables conditions")
 	if allowParseNames {
-		a.ReverseLookupContainerIPv4Arg = a.CommandSet.BoolVarLong(&a.reverseLookupContainerIPv4, "rev-lookup", 0, "", "allow specifying addresses in 172.* subnet and map them back to container names")
+		a.ReverseLookupContainerIPv4Arg = a.CommandSet.BoolVarLong(&a.reverseLookupContainerIPv4, "rev-lookup", 0, "allow specifying addresses in 172.* subnet and map them back to container names")
 	}
 
-	// enum default
+	// explicitly set all option defaults
 	a.proto = "tcp"
+	a.source = "."
+	a.dest = "."
+	a.sourcePort = 0
+	a.destPort = 0
+	a.filter = ""
 
 	return &a
 }
@@ -88,7 +93,7 @@ func (a *Action) Validate() error {
 		return errors.New("--source is mandatory")
 	}
 	if a.Action == "add-internal" {
-		if !a.DestArg.Seen() {
+		if !a.DestPortArg.Seen() {
 			return errors.New("--dport is mandatory")
 		}
 	}
@@ -101,6 +106,14 @@ func (a *Action) Validate() error {
 
 	if a.DestPortArg.Seen() && a.destPort == 0 {
 		return errors.New("Invalid destination port specified")
+	}
+
+	if len(a.dest) == 0 {
+		return errors.New("Invalid destination specification")
+	}
+
+	if len(a.source) == 0 {
+		return errors.New("Invalid source specification")
 	}
 
 	return nil
