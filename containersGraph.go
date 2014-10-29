@@ -98,6 +98,45 @@ func sortBeforeStart(result *Node, nodes []*Node) (*Node, error) {
 	return result, nil
 }
 
+func fixHostConfig(name string, orig *docker.HostConfig) *docker.HostConfig {
+	newConfig := docker.HostConfig{
+		Binds:           orig.Binds,
+		CapAdd:          orig.CapAdd,
+		CapDrop:         orig.CapDrop,
+		ContainerIDFile: orig.ContainerIDFile,
+		LxcConf:         orig.LxcConf,
+		Privileged:      orig.Privileged,
+		PortBindings:    orig.PortBindings,
+		PublishAllPorts: orig.PublishAllPorts,
+		Dns:             orig.Dns,
+		DnsSearch:       orig.DnsSearch,
+		ExtraHosts:      orig.ExtraHosts,
+		VolumesFrom:     orig.VolumesFrom,
+		NetworkMode:     orig.NetworkMode,
+		RestartPolicy:   orig.RestartPolicy,
+	}
+
+	// normalize
+	if newConfig.RestartPolicy.Name == "" {
+		newConfig.RestartPolicy = docker.NeverRestart()
+	}
+
+	// now add links
+	for _, link := range orig.Links {
+		parts := strings.SplitN(link, ":", 2)
+		// remove prefix from second part and leading slash from first part
+		if parts[0][0] != '/' || parts[1][0] != '/' {
+			// something has changed in API, likely inconsistency fixed upstream
+			panic("unexpected format of links")
+		}
+		parts[0] = parts[0][1:]
+		parts[1] = parts[1][(len(name) + 1):]
+		newConfig.Links = append(newConfig.Links, fmt.Sprintf("%s:%s", parts[0], parts[1]))
+	}
+
+	return &newConfig
+}
+
 // 1) build a graph of container dependencies
 // 2) start them from lowest to highest dependency count
 // 3) for each container start, pause them (if asked to)
@@ -186,7 +225,10 @@ func StartContainers(containerIds []string, paused, pullDeps bool) error {
 		changedState := false
 		// start container
 		if !node.Self.State.Running {
-			err := Docker.StartContainer(node.Self.ID, nil)
+			hostConfig := fixHostConfig(node.Self.Name, node.Self.HostConfig)
+
+			// use last known host configuration
+			err := Docker.StartContainer(node.Self.ID, hostConfig)
 			if err != nil {
 				return err
 			}
