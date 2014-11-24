@@ -55,15 +55,15 @@ var (
 func NewAction(action string, allowParseNames bool) *Action {
 	var a Action
 	a.CommandSet = getopt.New()
-	a.CommandSet.SetProgram("docker-fw (init|start|allow|add|add-internal|replay|drop) containerId")
-	a.CommandSet.SetParameters("\n\nSyntax for 'add' and 'add-internal' actions:\n\tdocker-fw (add|add-internal) ...")
+	a.CommandSet.SetProgram("docker-fw (init|start|allow|add|add-input|add-internal|replay|drop) containerId")
+	a.CommandSet.SetParameters("\n\nSyntax for all add actions:\n\tdocker-fw (add|add-input|add-internal) ...")
 	a.Action = action
 
 	// define all command line options
 	a.SourceArg = a.CommandSet.StringVarLong(&a.source, "source", 's', "source-specification*", ".")
 	a.SourcePortArg = a.CommandSet.Uint16VarLong(&a.sourcePort, "sport", 0, "Source port, optional", "port")
 	a.DestArg = a.CommandSet.StringVarLong(&a.dest, "dest", 'd', "destination-specification*", ".")
-	a.DestPortArg = a.CommandSet.Uint16VarLong(&a.destPort, "dport", 0, "Destination port, mandatory only for 'add-internal' action", "port")
+	a.DestPortArg = a.CommandSet.Uint16VarLong(&a.destPort, "dport", 0, "Destination port, mandatory only for 'add-input' and 'add-internal' actions", "port")
 	a.ProtoArg = a.CommandSet.EnumVarLong(&a.proto, "protocol", 'p', []string{"tcp", "udp"}, "The protocol of the packet to check")
 	a.FilterArg = a.CommandSet.StringVarLong(&a.filter, "filter", 0, "extra iptables conditions")
 	if allowParseNames {
@@ -82,7 +82,7 @@ func NewAction(action string, allowParseNames bool) *Action {
 }
 
 func (a *Action) CreateRule() (*IptablesRule, error) {
-	return NewIptRule(a.ContainerId, a.source, a.sourcePort, a.dest, a.destPort, a.proto, a.filter, a.reverseLookupContainerIPv4)
+	return NewIptablesRule(a.ContainerId, a.source, a.sourcePort, a.dest, a.destPort, a.proto, a.filter, a.reverseLookupContainerIPv4)
 }
 
 func (a *Action) Validate() error {
@@ -92,13 +92,13 @@ func (a *Action) Validate() error {
 	if !a.SourceArg.Seen() {
 		return errors.New("--source is mandatory")
 	}
-	if a.Action == "add-internal" {
+	if a.Action == "add-input" || a.Action == "add-internal" {
 		if !a.DestPortArg.Seen() {
 			return errors.New("--dport is mandatory")
 		}
 	}
 
-	//NOTE: enforcement of different source/destination happens in NewIptRule()
+	//NOTE: enforcement of different source/destination happens in NewIptablesRule()
 
 	if a.SourcePortArg.Seen() && a.sourcePort == 0 {
 		return errors.New("Invalid source port specified")
@@ -149,11 +149,17 @@ func (a *Action) Run() error {
 	}
 
 	if a.Action == "add" {
+                if isDockerIPv4(rule.Source) && isDockerIPv4(rule.Destination) {
+                        return errors.New("Trying to add an external firewall rule for internal Docker traffic")
+                }
+
 		err = AddFirewallRule(a.ContainerId, rule)
+	} else if a.Action == "add-input" {
+		err = AddInputRule(a.ContainerId, rule)
 	} else if a.Action == "add-internal" {
 		err = AddInternalRule(a.ContainerId, rule)
 	} else {
-		// only add and add-internal are supported when importing from file
+		// only add actions are supported when importing from file
 		panic("cannot execute this action: " + a.Action)
 	}
 	return err
@@ -301,7 +307,7 @@ func main() {
 		os.Exit(0)
 		return
 
-	case "add-internal", "add":
+	case "add-internal", "add", "add-input":
 		if len(os.Args) < 3 {
 			log.Fatal("no container id specified")
 			os.Exit(1)

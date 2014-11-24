@@ -198,7 +198,7 @@ func (ccl *CachedContainerLookup) ParseAddress(addressOrAlias string, self *dock
 			}
 
 			// disallow specifying IPs in Docker subnet (unless specifically allowed)
-			if strings.HasPrefix(ipv4, "172.") && strings.HasSuffix(ipv4, "/32") {
+			if isDockerIPv4(ipv4) && strings.HasSuffix(ipv4, "/32") {
 				if !parseContainerNames {
 					return "", "", errors.New("Trying to use Docker IPv4, use an alias instead")
 				}

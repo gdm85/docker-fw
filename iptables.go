@@ -37,6 +37,7 @@ import (
 const (
 	IPTABLES_BINARY = "/sbin/iptables"
 	DOCKER_HOST     = "172.17.42.1/32"
+	DOCKER_CHAIN    = "DOCKER"
 )
 
 type IptablesRule struct {
@@ -86,6 +87,10 @@ func init() {
 
 	// initialize cache used for all operations
 	ccl = &CachedContainerLookup{containers: map[string]*docker.Container{}, networkAddress: map[string]*docker.Container{}}
+}
+
+func isDockerIPv4(ipv4 string) bool {
+	return strings.HasPrefix(ipv4, "172.")
 }
 
 func iptablesRun(quiet bool, commandLine string) (int, error) {
@@ -156,7 +161,7 @@ func InitializeFirewall() error {
 	}
 
 	// this Docker-added rule must be disposed, see https://github.com/docker/docker/issues/6034#issuecomment-58742268
-	rule := "FORWARD -o docker0 -j DOCKER"
+	rule := "FORWARD -o docker0 -j " + DOCKER_CHAIN
 	if RuleExists(rule) {
 		err := internalDelete(rule, false)
 		if err != nil {
@@ -168,12 +173,17 @@ func InitializeFirewall() error {
 		if err != nil {
 			return err
 		}
+	} else {
+		return errors.New("Could not find docker-added rule")
 	}
+
+	//TODO: check that our inserted rule is still on top
+	// possibly extend this check everywhere iptables is touched
 
 	return nil
 }
 
-func NewIptRule(cid string, source string, sourcePort uint16, dest string, destPort uint16, proto, filter string, reverseLookupContainerIPv4 bool) (*IptablesRule, error) {
+func NewIptablesRule(cid string, source string, sourcePort uint16, dest string, destPort uint16, proto, filter string, reverseLookupContainerIPv4 bool) (*IptablesRule, error) {
 	container, err := ccl.Lookup(cid)
 	if err != nil {
 		return nil, err
@@ -208,7 +218,7 @@ func NewIptRule(cid string, source string, sourcePort uint16, dest string, destP
 	return &rule, nil
 }
 
-// CMD
+// corresponding to a subcommand
 // function to allow incoming traffic for a specific container
 func AllowExternal(cid string, whitelist4 []string) error {
 	container, err := ccl.Lookup(cid)
@@ -283,7 +293,7 @@ func (rule *IptablesRule) Aliases() string {
 	return s
 }
 
-// CMD
+// corresponding to a subcommand ('add')
 func AddFirewallRule(cid string, iptRule *IptablesRule) error {
 	container, err := ccl.Lookup(cid)
 	if err != nil {
@@ -294,7 +304,7 @@ func AddFirewallRule(cid string, iptRule *IptablesRule) error {
 }
 
 func addFirewallRule(container *docker.Container, iptRule *IptablesRule) error {
-	addedRule := ActiveIptablesRule{Chain: "FORWARD", JumpTo: "DOCKER"}
+	addedRule := ActiveIptablesRule{Chain: "FORWARD", JumpTo: DOCKER_CHAIN}
 	addedRule.IptablesRule = *iptRule
 
 	// add always on top
@@ -307,8 +317,8 @@ func addFirewallRule(container *docker.Container, iptRule *IptablesRule) error {
 	return recordRule(container, &addedRule)
 }
 
-// CMD
-func AddInternalRule(cid string, iptRule *IptablesRule) error {
+// corresponding to a subcommand (add-input)
+func AddInputRule(cid string, iptRule *IptablesRule) error {
 	container, err := ccl.Lookup(cid)
 	if err != nil {
 		return err
@@ -318,6 +328,24 @@ func AddInternalRule(cid string, iptRule *IptablesRule) error {
 	addedRule.IptablesRule = *iptRule
 
 	err = internalInsert(addedRule.Position(), addedRule.Format())
+	if err != nil {
+		return err
+	}
+
+	return recordRule(container, &addedRule)
+}
+
+// corresponding to a subcommand (add-internal)
+func AddInternalRule(cid string, iptRule *IptablesRule) error {
+	container, err := ccl.Lookup(cid)
+	if err != nil {
+		return err
+	}
+
+	addedRule := ActiveIptablesRule{Chain: DOCKER_CHAIN, JumpTo: "ACCEPT"}
+	addedRule.IptablesRule = *iptRule
+
+	err = internalAppend(addedRule.Format())
 	if err != nil {
 		return err
 	}
@@ -440,9 +468,28 @@ func RuleExists(rule string) bool {
 	return exitCode == 0
 }
 
+func internalAppend(rule string) error {
+	if RuleExists(rule) {
+		fmt.Printf("iptables: rule '%s' already exists, not appending\n", rule)
+		return nil
+	}
+
+	parts := strings.SplitN(rule, " ", 2)
+	// now append rule
+	exitCode, err := iptablesRun(false, fmt.Sprintf("--wait -A %s %s", parts[0], parts[1]))
+	if err != nil {
+		panic(fmt.Sprintf("iptables: %s", err))
+	}
+	if exitCode != 0 {
+		return errors.New("cannot append iptables rule")
+	}
+
+	return nil
+}
+
 func internalInsert(pos int, rule string) error {
 	if RuleExists(rule) {
-		fmt.Printf("iptables: rule '%s' already exists\n", rule)
+		fmt.Printf("iptables: rule '%s' already exists, not inserting\n", rule)
 		return nil
 	}
 
@@ -524,9 +571,17 @@ func ReplayRules(containerIds []string) error {
 			if RuleExists(rule) {
 				fmt.Printf("iptables: rule '%s' already exists", rule)
 			} else {
-				err := internalInsert(r.Position(), rule)
-				if err != nil {
-					return err
+				// insert or append, depending on destination chain
+				if r.Chain == DOCKER_CHAIN {
+					err := internalAppend(rule)
+					if err != nil {
+						return err
+					}
+				} else {
+					err := internalInsert(r.Position(), rule)
+					if err != nil {
+						return err
+					}
 				}
 			}
 		}
