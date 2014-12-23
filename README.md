@@ -3,18 +3,13 @@ Docker-fw
 
 docker-fw is a complementary tool for [Docker](https://docker.com/) to manage internal firewall rules between Docker containers or rules from other subnets targeting them; it features persistence to allow users restoring such firewall rules in case host or container are restarted.
 
-docker-fw has the following prerequisistes:
-- your firewall must be using the ``*filter FORWARD`` chain with a default policy of REJECT/DROP (or an equivalent bottom rule)
-- a custom Docker with [PR #7003](https://github.com/docker/docker/pull/7003) (information on this page will be updated accordingly if/when the pull request is merged)
+docker-fw expects your firewall to be using the ``*filter FORWARD`` chain with a default policy of REJECT/DROP (or an equivalent rule at bottom).
 
-Want to contribute? Please submit a [pull request](https://github.com/gdm85/docker-fw/pulls) or [create an issue](https://github.com/gdm85/docker-fw/issues/new).
+docker-fw does not work well with Docker daemon ``--restart`` options because docker-fw would not be called automatically on container start. However, you can customize initialization of containers on host boot script via ``/etc/rc.local``, for example to loop through existing containers and initialize their firewall rules using ``docker-fw start``.
 
-Use-case example
-================
+It is also possible to use this utility completely manage your internal docker0 bridge traffic between containers, as it will play nicely along with ``--icc=false`` and ``--iptables=true`` Docker daemon options.
 
-docker-fw does not work well with ``--restart`` options because docker-fw would not be called automatically on container start. However, you can customize initialization of containers on host boot script via ``/etc/rc.local``, for example to loop through existing containers and initialize their firewall rules using ``docker-fw start``.
-
-It is also possible to use docker-fw to completely manage your internal docker0 bridge traffic between containers, but docker-fw will play nicely along with ``--icc=false`` and ``--iptables=true`` options of Docker daemon.
+Willing to contribute? Please submit a [pull request](https://github.com/gdm85/docker-fw/pulls) or [create an issue](https://github.com/gdm85/docker-fw/issues/new).
 
 Iptables workflow explanation
 =============================
@@ -39,8 +34,6 @@ docker-fw is licensed under GNU GPL version 2, see [LICENSE](LICENSE).
 
 Actions
 ========
-
-docker-fw supports a few subcommands, called 'actions'.
 
 Init
 ----
