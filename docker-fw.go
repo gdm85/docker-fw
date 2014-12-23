@@ -149,9 +149,9 @@ func (a *Action) Run() error {
 	}
 
 	if a.Action == "add" {
-                if isDockerIPv4(rule.Source) && isDockerIPv4(rule.Destination) {
-                        return errors.New("Trying to add an external firewall rule for internal Docker traffic")
-                }
+		if isDockerIPv4(rule.Source) && isDockerIPv4(rule.Destination) {
+			return errors.New("Trying to add an external firewall rule for internal Docker traffic")
+		}
 
 		err = AddFirewallRule(a.ContainerId, rule)
 	} else if a.Action == "add-input" {
@@ -309,7 +309,7 @@ func main() {
 
 	case "add-internal", "add", "add-input":
 		if len(os.Args) < 3 {
-			log.Fatal("no container id specified")
+			log.Fatalf("%s: no container id specified", cliArgs.Action)
 			os.Exit(1)
 			return
 		}
@@ -352,8 +352,10 @@ func main() {
 			for scanner.Scan() {
 				lineNo++
 
-				// always use same action for all lines
+				// create a new 'commandLine' for each input line,
+				// but always use same action for all lines
 				commandLine := NewAction(cliArgs.Action, false)
+				// set executable name
 				newArgs := []string{os.Args[0]}
 				newArgs = append(newArgs, strings.Split(scanner.Text(), " ")...)
 				if err := commandLine.Parse(newArgs); err != nil {
