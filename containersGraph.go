@@ -99,22 +99,8 @@ func sortBeforeStart(result *Node, nodes []*Node) (*Node, error) {
 }
 
 func fixHostConfig(name string, orig *docker.HostConfig) *docker.HostConfig {
-	newConfig := docker.HostConfig{
-		Binds:           orig.Binds,
-		CapAdd:          orig.CapAdd,
-		CapDrop:         orig.CapDrop,
-		ContainerIDFile: orig.ContainerIDFile,
-		LxcConf:         orig.LxcConf,
-		Privileged:      orig.Privileged,
-		PortBindings:    orig.PortBindings,
-		PublishAllPorts: orig.PublishAllPorts,
-		Dns:             orig.Dns,
-		DnsSearch:       orig.DnsSearch,
-		ExtraHosts:      orig.ExtraHosts,
-		VolumesFrom:     orig.VolumesFrom,
-		NetworkMode:     orig.NetworkMode,
-		RestartPolicy:   orig.RestartPolicy,
-	}
+	newConfig := *orig
+	newConfig.Links = []string{}
 
 	// normalize
 	if newConfig.RestartPolicy.Name == "" {
