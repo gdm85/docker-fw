@@ -345,7 +345,7 @@ func AddInternalRule(cid string, iptRule *IptablesRule) error {
 	addedRule := ActiveIptablesRule{Chain: DOCKER_CHAIN, JumpTo: "ACCEPT"}
 	addedRule.IptablesRule = *iptRule
 
-	err = internalAppend(addedRule.Format())
+	err = internalAppend(cid, addedRule.Format())
 	if err != nil {
 		return err
 	}
@@ -468,9 +468,9 @@ func RuleExists(rule string) bool {
 	return exitCode == 0
 }
 
-func internalAppend(rule string) error {
+func internalAppend(containerId, rule string) error {
 	if RuleExists(rule) {
-		fmt.Printf("iptables: rule '%s' already exists, not appending\n", rule)
+		fmt.Printf("iptables(%s): rule '%s' already exists, not appending\n", containerId, rule)
 		return nil
 	}
 
@@ -478,10 +478,10 @@ func internalAppend(rule string) error {
 	// now append rule
 	exitCode, err := iptablesRun(false, fmt.Sprintf("--wait -A %s %s", parts[0], parts[1]))
 	if err != nil {
-		panic(fmt.Sprintf("iptables: %s", err))
+		panic(fmt.Sprintf("iptables(%s): %s", containerId, err))
 	}
 	if exitCode != 0 {
-		return errors.New("cannot append iptables rule")
+		return errors.New(fmt.Sprintf("iptables(%s): cannot append rule '%s'", containerId, rule))
 	}
 
 	return nil
@@ -569,11 +569,11 @@ func ReplayRules(containerIds []string) error {
 			// check if new rule is already there
 			rule := r.Format()
 			if RuleExists(rule) {
-				fmt.Printf("iptables: rule '%s' already exists", rule)
+				fmt.Printf("iptables(%s): rule '%s' already exists\n", container.Name, rule)
 			} else {
 				// insert or append, depending on destination chain
 				if r.Chain == DOCKER_CHAIN {
-					err := internalAppend(rule)
+					err := internalAppend(container.Name, rule)
 					if err != nil {
 						return err
 					}
