@@ -184,7 +184,7 @@ func InitializeFirewall() error {
 }
 
 func NewIptablesRule(cid string, source string, sourcePort uint16, dest string, destPort uint16, proto, filter string, reverseLookupContainerIPv4 bool) (*IptablesRule, error) {
-	container, err := ccl.Lookup(cid)
+	container, err := ccl.LookupOnlineContainer(cid)
 	if err != nil {
 		return nil, err
 	}
@@ -221,7 +221,7 @@ func NewIptablesRule(cid string, source string, sourcePort uint16, dest string, 
 // corresponding to a subcommand
 // function to allow incoming traffic for a specific container
 func AllowExternal(cid string, whitelist4 []string) error {
-	container, err := ccl.Lookup(cid)
+	container, err := ccl.LookupOnlineContainer(cid)
 	if err != nil {
 		return err
 	}
@@ -295,7 +295,7 @@ func (rule *IptablesRule) Aliases() string {
 
 // corresponding to a subcommand ('add')
 func AddFirewallRule(cid string, iptRule *IptablesRule) error {
-	container, err := ccl.Lookup(cid)
+	container, err := ccl.LookupOnlineContainer(cid)
 	if err != nil {
 		return err
 	}
@@ -319,7 +319,7 @@ func addFirewallRule(container *docker.Container, iptRule *IptablesRule) error {
 
 // corresponding to a subcommand (add-input)
 func AddInputRule(cid string, iptRule *IptablesRule) error {
-	container, err := ccl.Lookup(cid)
+	container, err := ccl.LookupOnlineContainer(cid)
 	if err != nil {
 		return err
 	}
@@ -337,7 +337,7 @@ func AddInputRule(cid string, iptRule *IptablesRule) error {
 
 // corresponding to a subcommand (add-internal)
 func AddInternalRule(cid string, iptRule *IptablesRule) error {
-	container, err := ccl.Lookup(cid)
+	container, err := ccl.LookupOnlineContainer(cid)
 	if err != nil {
 		return err
 	}
@@ -409,7 +409,7 @@ func (c *IptablesRulesCollection) Save() error {
 
 func DropRules(containerIds []string) error {
 	for _, cid := range containerIds {
-		container, err := ccl.LookupInert(cid)
+		container, err := ccl.LookupContainer(cid)
 		if err != nil {
 			return err
 		}
@@ -523,7 +523,7 @@ func internalDelete(rule string, quiet bool) error {
 // execute again all rules stored for specified container
 func ReplayRules(containerIds []string) error {
 	for _, cidx := range containerIds {
-		container, err := ccl.Lookup(cidx)
+		container, err := ccl.LookupOnlineContainer(cidx)
 		if err != nil {
 			return err
 		}

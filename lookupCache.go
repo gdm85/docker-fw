@@ -150,12 +150,12 @@ func (ccl *CachedContainerLookup) LoadAllContainers() error {
 	return nil
 }
 
-func (ccl *CachedContainerLookup) Lookup(cid string) (*docker.Container, error) {
+func (ccl *CachedContainerLookup) LookupOnlineContainer(cid string) (*docker.Container, error) {
 	return ccl.lookupInternal(cid, true)
 }
 
 // same as Lookup(), but does not check that container is up and running
-func (ccl *CachedContainerLookup) LookupInert(cid string) (*docker.Container, error) {
+func (ccl *CachedContainerLookup) LookupContainer(cid string) (*docker.Container, error) {
 	return ccl.lookupInternal(cid, false)
 }
 
@@ -222,7 +222,7 @@ func (ccl *CachedContainerLookup) ParseAddress(addressOrAlias string, self *dock
 			return ipv4, "", nil
 		} else {
 			// not an ipv4, try to match to a container name/id
-			container, err := ccl.Lookup(addressOrAlias)
+			container, err := ccl.LookupOnlineContainer(addressOrAlias)
 			if err != nil {
 				return "", "", err
 			}

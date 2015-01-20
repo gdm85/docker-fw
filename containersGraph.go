@@ -123,16 +123,43 @@ func fixHostConfig(name string, orig *docker.HostConfig) *docker.HostConfig {
 	return &newConfig
 }
 
+func wrapperDockerPause(container *docker.Container) error {
+	err := Docker.PauseContainer(container.ID)
+	if err != nil {
+		return err
+	}
+
+	// this will enforce container to be online
+	err = ccl.RefreshContainer(container.ID, true)
+
+	return err
+}
+
+func wrapperDockerStart(container *docker.Container, ignoredStartPaused bool) error {
+	hostConfig := fixHostConfig(container.Name, container.HostConfig)
+
+	// use last known host configuration
+	err := Docker.StartContainer(container.ID, hostConfig)
+	if err != nil {
+		return err
+	}
+
+	// this will enforce container to be online
+	err = ccl.RefreshContainer(container.ID, true)
+
+	return err
+}
+
 // 1) build a graph of container dependencies
 // 2) start them from lowest to highest dependency count
 // 3) for each container start, pause them (if asked to)
-// 4) for each container start, run the 'replay' action too
-func StartContainers(containerIds []string, paused, pullDeps bool) error {
+// 4) when all containers have been started, run the 'replay' action for them
+func StartContainers(containerIds []string, startPaused, pullDeps, dryRun bool) error {
 	// first normalize all container ids to the proper 'ID' property given through inspect
 	// this is necessary because we won't allow to start dependant containers if not specified
 	var containers []*docker.Container
 	for _, cid := range containerIds {
-		container, err := ccl.LookupInert(cid)
+		container, err := ccl.LookupContainer(cid)
 		if err != nil {
 			return err
 		}
@@ -158,7 +185,7 @@ func StartContainers(containerIds []string, paused, pullDeps bool) error {
 
 			// identify the target container
 			linkTarget := parts[0][1:]
-			targetContainer, err := ccl.LookupInert(linkTarget)
+			targetContainer, err := ccl.LookupContainer(linkTarget)
 			if err != nil {
 				return err
 			}
@@ -200,49 +227,56 @@ func StartContainers(containerIds []string, paused, pullDeps bool) error {
 		return err
 	}
 
-	dryRun := false
-
 	for i := len(result.Leaves) - 1; i >= 0; i-- {
-		node := result.Leaves[i]
+		nonUpToDateNode := result.Leaves[i]
 		if dryRun {
-			fmt.Printf("%s\n", node.Self.Name[1:])
+			fmt.Printf("%s\n", nonUpToDateNode.Self.Name[1:])
 			continue
 		}
-		changedState := false
-		// start container
-		if !node.Self.State.Running {
-			hostConfig := fixHostConfig(node.Self.Name, node.Self.HostConfig)
 
-			// use last known host configuration
-			err := Docker.StartContainer(node.Self.ID, hostConfig)
+		// always get latest version, since state might have changed
+		container, err := ccl.LookupContainer(nonUpToDateNode.Self.ID)
+		if err != nil {
+			return err
+		}
+
+		// start container
+		if !container.State.Running {
+			err := wrapperDockerStart(container, startPaused)
 			if err != nil {
 				return err
 			}
-			changedState = true
+
+			// always get latest version, since state might have changed
+			container, err = ccl.LookupContainer(nonUpToDateNode.Self.ID)
+			if err != nil {
+				return err
+			}
 		}
 
-		if paused {
-			if !node.Self.State.Paused {
-				err := Docker.PauseContainer(node.Self.ID)
+		if startPaused {
+			if !container.State.Paused {
+				err := wrapperDockerPause(container)
 				if err != nil {
 					return err
 				}
 			}
-			changedState = true
 		}
+	}
 
-		if changedState {
-			// enforce here container to be online
-			err := ccl.RefreshContainer(node.Self.ID, true)
+	///
+	/// split start from rules application due to glitch/bug (see https://github.com/docker/docker/issues/10188)
+	///
+
+	if !dryRun {
+		for i := len(result.Leaves) - 1; i >= 0; i-- {
+			node := result.Leaves[i]
+
+			// always run the 'replay' action
+			err := ReplayRules([]string{node.Self.ID})
 			if err != nil {
 				return err
 			}
-		}
-
-		// always run the 'replay' action
-		err := ReplayRules([]string{node.Self.ID})
-		if err != nil {
-			return err
 		}
 	}
 

@@ -36,6 +36,7 @@ const (
 	ADDR_SPEC = "Can be either an IPv4 address, a subnet, one of the special aliases ('.' = container IPv4, '/' = docker host IPv4) or a container id. If an IPv4 address is specified and no subnet, '/32' will be added. Default is '.'"
 	// directly from Docker
 	validContainerNameChars = `[a-zA-Z0-9][a-zA-Z0-9_.-]`
+	DRY_RUN = false
 )
 
 type Action struct {
@@ -261,7 +262,7 @@ func main() {
 			containerIds = append(containerIds, arg)
 		}
 
-		err := StartContainers(containerIds, paused, pullDeps)
+		err := StartContainers(containerIds, paused, pullDeps, DRY_RUN)
 		// parse error
 		if err != nil {
 			log.Printf("%s: %s", cliArgs.Action, err)
