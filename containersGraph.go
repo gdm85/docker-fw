@@ -1,5 +1,5 @@
 /*
- * docker-fw v0.1.0 - a complementary tool for Docker to manage custom
+ * docker-fw v0.2.0 - a complementary tool for Docker to manage custom
  *                    firewall rules between/towards Docker containers
  * Copyright (C) 2014 gdm85 - https://github.com/gdm85/docker-fw/
 
@@ -24,51 +24,8 @@ import (
 	"errors"
 	"fmt"
 	"github.com/gdm85/go-dockerclient"
-	"sort"
 	"strings"
 )
-
-type Node struct {
-	Self *docker.Container
-	// all nodes that hierarchically come afterwards
-	Leaves  SortableNodeArray
-	Visited bool
-}
-
-type SortableNodeArray []*Node
-
-func (s SortableNodeArray) Len() int {
-	return len(s)
-}
-
-func (s SortableNodeArray) Swap(i, j int) {
-	s[i], s[j] = s[j], s[i]
-}
-
-func (s SortableNodeArray) Less(i, j int) bool {
-	// first check if there is a parent/leaf relationship
-	if s[i].Leaves.Contains(s[j]) {
-		return false
-	}
-	if s[j].Leaves.Contains(s[i]) {
-		return true
-	}
-
-	//NOTE: if Docker allows two-ways links, the above won't sort!
-
-	// when no relationship is estabilished, then just sort by number of other relationships
-	// will be undetermined in case of 0
-	return len(s[i].Leaves) < len(s[j].Leaves)
-}
-
-func (s SortableNodeArray) Contains(n *Node) bool {
-	for _, v := range s {
-		if v == n {
-			return true
-		}
-	}
-	return false
-}
 
 func arrayContains(haystack []*docker.Container, needle *docker.Container) bool {
 	for _, b := range haystack {
@@ -78,24 +35,6 @@ func arrayContains(haystack []*docker.Container, needle *docker.Container) bool 
 		}
 	}
 	return false
-}
-
-func sortBeforeStart(result *Node, nodes []*Node) (*Node, error) {
-	for _, node := range nodes {
-		// skip already-started nodes, possible when a node is used by multiple nodes
-		if node.Visited {
-			continue
-		}
-		node.Visited = true
-		result.Leaves = append(result.Leaves, node)
-
-		// recurse dependencies
-		_, err := sortBeforeStart(result, node.Leaves)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return result, nil
 }
 
 func wrapperDockerPause(container *docker.Container) error {
@@ -179,84 +118,93 @@ func StartContainers(containerIds []string, startPaused, pullDeps, dryRun bool) 
 		normalizedIds = append(normalizedIds, container.ID)
 	}
 
-	// traverse the containers list identifying leaf|parent relationships
-	graph := make(map[string]*Node, 0)
+	// build the sortable graph of nodes and their link dependencies
+	lookup := map[string]*Node{}
 	for _, container := range containers {
 
 		// prepare container node itself
-		node, ok := graph[container.ID]
+		node, ok := lookup[container.ID]
 		if !ok {
-			node = &Node{
-				Self: container,
-			}
-			graph[container.ID] = node
+			node = NewNode(container)
+			lookup[container.ID] = node
 		}
 
 		for _, link := range container.HostConfig.Links {
 			parts := strings.SplitN(link, ":", 2)
 
 			// identify the target container
-			linkTarget := parts[0][1:]
-			targetContainer, err := ccl.LookupContainer(linkTarget)
+			linkName := parts[0][1:]
+			linkContainer, err := ccl.LookupContainer(linkName)
 			if err != nil {
 				return err
 			}
 
-			// allow to pull in other containers only if specifically allowed to
+			// error if a container is missing from selection and no --pull-deps was specified
 			if !pullDeps {
-				if !arrayContains(containers, targetContainer) {
-					return errors.New(fmt.Sprintf("container '%s' is not specified in list and no --pull-deps specified", targetContainer.Name[1:]))
+				if !arrayContains(containers, linkContainer) {
+					return errors.New(fmt.Sprintf("container '%s' is not specified in list and no --pull-deps specified", linkName))
 				}
 			}
 
-			targetNode, ok := graph[targetContainer.ID]
+			linkNode, ok := lookup[linkContainer.ID]
 			if !ok {
-				targetNode = &Node{
-					Self: targetContainer,
-				}
+				linkNode = NewNode(linkContainer)
 
-				graph[targetContainer.ID] = targetNode
+				lookup[linkContainer.ID] = linkNode
 			}
 
 			// now create association
-			targetNode.Leaves = append(targetNode.Leaves, node)
+			linkNode.LinkTo(node)
+		}
+
+		// now also check dependencies created by volumes
+		for _, volumesProvider := range container.HostConfig.VolumesFrom {
+
+			// identify the provider container
+			volsContainer, err := ccl.LookupContainer(volumesProvider)
+			if err != nil {
+				return err
+			}
+
+			// error if a container is missing from selection and no --pull-deps was specified
+			if !pullDeps {
+				if !arrayContains(containers, volsContainer) {
+					return errors.New(fmt.Sprintf("container '%s' (volumes provider) is not specified in list and no --pull-deps specified", volsContainer.Name[1:]))
+				}
+			}
+
+			volsNode, ok := lookup[volsContainer.ID]
+			if !ok {
+				volsNode = NewNode(volsContainer)
+
+				lookup[volsContainer.ID] = volsNode
+			}
+
+			// now create association
+			volsNode.LinkTo(node)
 		}
 	}
 
 	// convert the map to a flat array
-	var nodes SortableNodeArray
-	for _, v := range graph {
-		nodes = append(nodes, v)
+	var allNodes SortableNodeArray
+	for _, v := range lookup {
+		allNodes = append(allNodes, v)
 	}
 
-	// sort by dependencies/links number
-	// order is: from least used to most used
-	sort.Sort(nodes)
-
-	var result Node
-	_, err := sortBeforeStart(&result, nodes)
-	if err != nil {
-		return err
-	}
+	// apply topological sort
+	allNodes = allNodes.TopSort()
 
 	if dryRun {
-		for i := len(result.Leaves) - 1; i >= 0; i-- {
-			container := result.Leaves[i].Self
-			fmt.Printf("%s\n", container.Name[1:])
+		for _, node := range allNodes {
+			fmt.Println(node.Name)
 		}
 
 		return nil
 	}
 
-	for i := len(result.Leaves) - 1; i >= 0; i-- {
-		nonUpToDateNode := result.Leaves[i]
-		if dryRun {
-			fmt.Printf("%s\n", nonUpToDateNode.Self.Name[1:])
-			continue
-		}
-
+	for _, node := range allNodes {
 		// always get latest version, since state might have changed
-		container, err := ccl.LookupContainer(nonUpToDateNode.Self.ID)
+		container, err := ccl.LookupContainer(node.ID)
 		if err != nil {
 			return err
 		}
@@ -269,7 +217,7 @@ func StartContainers(containerIds []string, startPaused, pullDeps, dryRun bool) 
 			}
 
 			// always get latest version, since state might have changed
-			container, err = ccl.LookupContainer(nonUpToDateNode.Self.ID)
+			container, err = ccl.LookupContainer(node.ID)
 			if err != nil {
 				return err
 			}
@@ -287,8 +235,8 @@ func StartContainers(containerIds []string, startPaused, pullDeps, dryRun bool) 
 	}
 
 	// attempt to save again network rules
-	// NOTE: will fail if there is any change detected
-	err = BackupHostConfig(normalizedIds, true)
+	// NOTE: will fail if any change is detected
+	err := BackupHostConfig(normalizedIds, true)
 	if err != nil {
 		return err
 	}
@@ -297,14 +245,10 @@ func StartContainers(containerIds []string, startPaused, pullDeps, dryRun bool) 
 	/// split start from rules application due to glitch/bug (see https://github.com/docker/docker/issues/10188)
 	///
 
-	for i := len(result.Leaves) - 1; i >= 0; i-- {
-		node := result.Leaves[i]
-
-		// always run the 'replay' action
-		err := ReplayRules([]string{node.Self.ID})
-		if err != nil {
-			return err
-		}
+	// always run the 'replay' action
+	err = ReplayRules(normalizedIds)
+	if err != nil {
+		return err
 	}
 
 	return err
