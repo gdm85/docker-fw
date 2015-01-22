@@ -20,13 +20,13 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/gdm85/go-dockerclient"
 	"io/ioutil"
 	"os"
+	"sort"
 )
 
 var Docker *docker.Client
@@ -43,6 +43,97 @@ func getBackupHostConfigFileName(cid string) string {
 	return fmt.Sprintf("/var/lib/docker/containers/%s/backupHostConfig.json", cid)
 }
 
+func areEquivalentArrays(a, b []string) bool {
+	if a == nil && a == nil {
+		return true
+	}
+
+	if len(a) != len(b) {
+		return false
+	}
+
+	sort.Strings(a)
+	sort.Strings(b)
+
+	// compare each element
+	l := len(a)
+	for i := 0; i < l; i++ {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+
+	return true
+}
+
+func arePortBindingsEqual(a, b map[docker.Port][]docker.PortBinding) bool {
+	if a == nil && b == nil {
+		return true
+	}
+
+	if len(a) != len(b) {
+		return false
+	}
+
+	// retrieve keys & convert each binding to a string, for ease of comparison
+	aKeys := []string{}
+	aValues := map[string][]string{}
+	for key, value := range a {
+		aKeys = append(aKeys, string(key))
+
+		serialized := []string{}
+		for _, binding := range value {
+			serialized = append(serialized, binding.HostIP+":"+binding.HostPort)
+		}
+
+		aValues[string(key)] = serialized
+	}
+
+	bKeys := []string{}
+	bValues := map[string][]string{}
+	for key, value := range b {
+		bKeys = append(bKeys, string(key))
+
+		serialized := []string{}
+		for _, binding := range value {
+			serialized = append(serialized, binding.HostIP+":"+binding.HostPort)
+		}
+
+		bValues[string(key)] = serialized
+	}
+
+	// keys must match
+	if !areEquivalentArrays(aKeys, bKeys) {
+		return false
+	}
+
+	// then traverse through the common keys to check if values match
+	for key, _ := range a {
+		if !areEquivalentArrays(aValues[string(key)], bValues[string(key)]) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func asGoodAs(orig *docker.HostConfig, current *docker.HostConfig) bool {
+	return orig.NetworkMode == current.NetworkMode &&
+		areEquivalentArrays(orig.Links, current.Links) &&
+		areEquivalentArrays(orig.DNS, current.DNS) &&
+		areEquivalentArrays(orig.DNSSearch, current.DNSSearch) &&
+		areEquivalentArrays(orig.ExtraHosts, current.ExtraHosts) &&
+		areEquivalentArrays(orig.VolumesFrom, current.VolumesFrom) &&
+		areEquivalentArrays(orig.Binds, current.Binds) &&
+		areEquivalentArrays(orig.CapAdd, current.CapAdd) &&
+		areEquivalentArrays(orig.CapDrop, current.CapDrop) &&
+		orig.PublishAllPorts == current.PublishAllPorts &&
+		orig.RestartPolicy.Name == current.RestartPolicy.Name &&
+		orig.Privileged == current.Privileged &&
+		orig.PublishAllPorts == current.PublishAllPorts &&
+		arePortBindingsEqual(orig.PortBindings, current.PortBindings)
+}
+
 //NOTE: containre must be running for this to work
 func BackupHostConfig(containerIds []string, failOnChange bool) error {
 	for _, userCid := range containerIds {
@@ -55,23 +146,19 @@ func BackupHostConfig(containerIds []string, failOnChange bool) error {
 			return errors.New(fmt.Sprintf("Container %s does is not running", container.ID))
 		}
 
-		// validate that nothing has changed
-		// (this is a testing feature)
+		// validate that nothing relevant has changed
 		if failOnChange {
-			origHostConfigBytes, err := fetchSavedHostConfigAsBytes(container.ID)
+			origHostConfig, err := fetchSavedHostConfig(container.ID)
 			if err != nil {
 				return err
 			}
 
-			if origHostConfigBytes != nil {
-				// proceed to validate that nothing changed since last execution time
-				currentHostConfigBytes, err := json.Marshal(container.HostConfig)
-				if err != nil {
-					return err
-				}
+			if origHostConfig != nil {
+				// proceed to validate that nothing relevant changed since last execution time
+				//NOTE: this might not be a good check anymore, depending on the feature set changes
 
-				if bytes.Compare(currentHostConfigBytes, origHostConfigBytes) != 0 {
-					return errors.New("HostConfig changed after start")
+				if !asGoodAs(origHostConfig, container.HostConfig) {
+					return errors.New(fmt.Sprintf("Container %s has inconsistently changed host configuration", container.ID))
 				}
 			}
 		}
