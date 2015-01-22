@@ -154,8 +154,13 @@ func BackupHostConfig(containerIds []string, failOnChange bool) error {
 			}
 
 			if origHostConfig != nil {
+				// normalize
+				if origHostConfig.RestartPolicy.Name == "" {
+					origHostConfig.RestartPolicy = docker.NeverRestart()
+				}
+
 				// proceed to validate that nothing relevant changed since last execution time
-				//NOTE: this might not be a good check anymore, depending on the feature set changes
+				//NOTE: this might easily be an insufficient test if new options are added
 
 				if !asGoodAs(origHostConfig, container.HostConfig) {
 					return errors.New(fmt.Sprintf("Container %s has inconsistently changed host configuration", container.ID))
