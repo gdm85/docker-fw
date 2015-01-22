@@ -45,20 +45,20 @@ func getBackupHostConfigFileName(cid string) string {
 
 //NOTE: containre must be running for this to work
 func BackupHostConfig(containerIds []string, failOnChange bool) error {
-	for _, cid := range containerIds {
-		container, err := ccl.LookupOnlineContainer(cid)
+	for _, userCid := range containerIds {
+		container, err := ccl.LookupOnlineContainer(userCid)
 		if err != nil {
 			return err
 		}
 
 		if !container.State.Running {
-			return errors.New(fmt.Sprintf("Container %s does is not running", cid))
+			return errors.New(fmt.Sprintf("Container %s does is not running", container.ID))
 		}
 
 		// validate that nothing has changed
 		// (this is a testing feature)
 		if failOnChange {
-			origHostConfigBytes, err := fetchSavedHostConfigAsBytes(cid)
+			origHostConfigBytes, err := fetchSavedHostConfigAsBytes(container.ID)
 			if err != nil {
 				return err
 			}
@@ -76,7 +76,7 @@ func BackupHostConfig(containerIds []string, failOnChange bool) error {
 			}
 		}
 
-		err = saveHostConfig(cid, container.HostConfig)
+		err = saveHostConfig(container.ID, container.HostConfig)
 		if err != nil {
 			return err
 		}

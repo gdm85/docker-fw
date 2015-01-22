@@ -110,6 +110,32 @@ func wrapperDockerPause(container *docker.Container) error {
 	return err
 }
 
+// this fix is necessary for an undocumented bug: you cannot feed back to API what you got it from regarding Links
+func fixHostConfig(name string, orig *docker.HostConfig) {
+	// normalize
+	if orig.RestartPolicy.Name == "" {
+		orig.RestartPolicy = docker.NeverRestart()
+	}
+
+	newLinks := []string{}
+
+	// now add links
+	for _, link := range orig.Links {
+		parts := strings.SplitN(link, ":", 2)
+		// remove prefix from second part and leading slash from first part
+		if parts[0][0] != '/' || parts[1][0] != '/' {
+			// something has changed in API, likely inconsistency fixed upstream
+			panic("unexpected format of links")
+		}
+		parts[0] = parts[0][1:]
+		parts[1] = parts[1][(len(name) + 1):]
+		newLinks = append(newLinks, fmt.Sprintf("%s:%s", parts[0], parts[1]))
+	}
+
+	// replace new links
+	orig.Links = newLinks
+}
+
 func wrapperDockerStart(container *docker.Container, ignoredStartPaused bool) error {
 	hostConfig, err := fetchSavedHostConfig(container.ID)
 	if err != nil {
@@ -119,6 +145,8 @@ func wrapperDockerStart(container *docker.Container, ignoredStartPaused bool) er
 	if hostConfig == nil {
 		return errors.New("No saved HostConfig found")
 	}
+
+	fixHostConfig(container.Name, hostConfig)
 
 	// use last known host configuration
 	err = Docker.StartContainer(container.ID, hostConfig)
