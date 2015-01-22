@@ -135,7 +135,7 @@ func asGoodAs(orig *docker.HostConfig, current *docker.HostConfig) bool {
 }
 
 //NOTE: containre must be running for this to work
-func BackupHostConfig(containerIds []string, failOnChange bool) error {
+func BackupHostConfig(containerIds []string, mergeNetworkSettings, failOnChange bool) error {
 	for _, userCid := range containerIds {
 		container, err := ccl.LookupOnlineContainer(userCid)
 		if err != nil {
@@ -168,7 +168,7 @@ func BackupHostConfig(containerIds []string, failOnChange bool) error {
 			}
 		}
 
-		err = saveHostConfig(container.ID, container.HostConfig)
+		err = backupHostConfig(container, mergeNetworkSettings)
 		if err != nil {
 			return err
 		}
@@ -177,12 +177,22 @@ func BackupHostConfig(containerIds []string, failOnChange bool) error {
 	return nil
 }
 
-func saveHostConfig(cid string, hostConfig *docker.HostConfig) error {
-	bytes, err := json.Marshal(hostConfig)
+func backupHostConfig(container *docker.Container, mergeNetworkSettings bool) error {
+	var origPortBindings map[docker.Port][]docker.PortBinding
+	if mergeNetworkSettings {
+		origPortBindings = container.HostConfig.PortBindings
+
+		container.HostConfig.PortBindings = container.NetworkSettings.Ports
+	}
+
+	bytes, err := json.Marshal(container.HostConfig)
+	if mergeNetworkSettings {
+		container.HostConfig.PortBindings = origPortBindings
+	}
 	if err != nil {
 		return err
 	}
-	err = ioutil.WriteFile(getBackupHostConfigFileName(cid), bytes, 0666)
+	err = ioutil.WriteFile(getBackupHostConfigFileName(container.ID), bytes, 0666)
 	return err
 }
 

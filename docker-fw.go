@@ -201,7 +201,7 @@ func performAction(action string, containerIds []string) error {
 	case "drop":
 		return DropRules(containerIds)
 	case "save-hostconfig":
-		return BackupHostConfig(containerIds, false)
+		return BackupHostConfig(containerIds, true, false)
 	default:
 		panic("invalid action: " + action)
 	}

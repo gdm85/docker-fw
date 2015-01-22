@@ -236,7 +236,7 @@ func StartContainers(containerIds []string, startPaused, pullDeps, dryRun bool) 
 
 	// attempt to save again network rules
 	// NOTE: will fail if any change is detected
-	err := BackupHostConfig(normalizedIds, true)
+	err := BackupHostConfig(normalizedIds, true, true)
 	if err != nil {
 		return err
 	}
