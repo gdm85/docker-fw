@@ -23,7 +23,7 @@ package main
 import (
 	"errors"
 	"fmt"
-	"github.com/fsouza/go-dockerclient"
+	"github.com/gdm85/go-dockerclient"
 	"strings"
 )
 
@@ -42,7 +42,7 @@ func (ccl *CachedContainerLookup) lookupInternal(cid string, mustBeOnline bool) 
 		panic("empty container id passed to lookupInternal")
 	}
 
-	if _, ok := ccl.containers[cid]; !ok {
+	if container, ok := ccl.containers[cid]; !ok {
 		if ccl.loadedAll {
 			return nil, errors.New("container not found in fully preloaded cache: " + cid)
 		}
@@ -50,6 +50,13 @@ func (ccl *CachedContainerLookup) lookupInternal(cid string, mustBeOnline bool) 
 		err := ccl.fullRefreshContainer(cid, mustBeOnline)
 		if err != nil {
 			return nil, err
+		}
+	} else {
+		// always perform check if container is online, also when returning a cached result
+		if mustBeOnline {
+			if container.NetworkSettings.IPAddress == "" {
+				return nil, errors.New(fmt.Sprintf("Container %s does not have a valid IPv4 address", container.ID))
+			}
 		}
 	}
 

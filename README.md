@@ -72,6 +72,17 @@ These commands can also parse and add multiple rules from a file or stdin (using
 
 When using --from, any other parameter (except --rev-lookup) is disallowed.
 
+Save-hostconfig
+---------------
+
+Save host configuration of a running and correctly network-enabled container.
+Such configuration will be used when starting the container through docker-fw.
+It always happens by default after a successful start.
+
+See also https://github.com/docker/docker/issues/8723
+
+	docker-fw save-ns container1 [container2] [container3] [...] [containerN]
+
 Replay
 ------
 

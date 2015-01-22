@@ -23,7 +23,7 @@ package main
 import (
 	"errors"
 	"fmt"
-	"github.com/fsouza/go-dockerclient"
+	"github.com/gdm85/go-dockerclient"
 	"sort"
 	"strings"
 )
@@ -98,31 +98,6 @@ func sortBeforeStart(result *Node, nodes []*Node) (*Node, error) {
 	return result, nil
 }
 
-func fixHostConfig(name string, orig *docker.HostConfig) *docker.HostConfig {
-	newConfig := *orig
-	newConfig.Links = []string{}
-
-	// normalize
-	if newConfig.RestartPolicy.Name == "" {
-		newConfig.RestartPolicy = docker.NeverRestart()
-	}
-
-	// now add links
-	for _, link := range orig.Links {
-		parts := strings.SplitN(link, ":", 2)
-		// remove prefix from second part and leading slash from first part
-		if parts[0][0] != '/' || parts[1][0] != '/' {
-			// something has changed in API, likely inconsistency fixed upstream
-			panic("unexpected format of links")
-		}
-		parts[0] = parts[0][1:]
-		parts[1] = parts[1][(len(name) + 1):]
-		newConfig.Links = append(newConfig.Links, fmt.Sprintf("%s:%s", parts[0], parts[1]))
-	}
-
-	return &newConfig
-}
-
 func wrapperDockerPause(container *docker.Container) error {
 	err := Docker.PauseContainer(container.ID)
 	if err != nil {
@@ -136,10 +111,17 @@ func wrapperDockerPause(container *docker.Container) error {
 }
 
 func wrapperDockerStart(container *docker.Container, ignoredStartPaused bool) error {
-	hostConfig := fixHostConfig(container.Name, container.HostConfig)
+	hostConfig, err := fetchSavedHostConfig(container.ID)
+	if err != nil {
+		return err
+	}
+
+	if hostConfig == nil {
+		return errors.New("No saved HostConfig found")
+	}
 
 	// use last known host configuration
-	err := Docker.StartContainer(container.ID, hostConfig)
+	err = Docker.StartContainer(container.ID, hostConfig)
 	if err != nil {
 		return err
 	}
@@ -158,6 +140,7 @@ func StartContainers(containerIds []string, startPaused, pullDeps, dryRun bool) 
 	// first normalize all container ids to the proper 'ID' property given through inspect
 	// this is necessary because we won't allow to start dependant containers if not specified
 	var containers []*docker.Container
+	normalizedIds := []string{}
 	for _, cid := range containerIds {
 		container, err := ccl.LookupContainer(cid)
 		if err != nil {
@@ -165,6 +148,7 @@ func StartContainers(containerIds []string, startPaused, pullDeps, dryRun bool) 
 		}
 
 		containers = append(containers, container)
+		normalizedIds = append(normalizedIds, container.ID)
 	}
 
 	// traverse the containers list identifying leaf|parent relationships
@@ -256,12 +240,20 @@ func StartContainers(containerIds []string, startPaused, pullDeps, dryRun bool) 
 
 		if startPaused {
 			if !container.State.Paused {
+				//NOTE: container might already have been paused in command above
 				err := wrapperDockerPause(container)
 				if err != nil {
 					return err
 				}
 			}
 		}
+	}
+
+	// attempt to save again network rules
+	// NOTE: will fail if there is any change detected
+	err = BackupHostConfig(normalizedIds, true)
+	if err != nil {
+		return err
 	}
 
 	///

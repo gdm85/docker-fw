@@ -32,11 +32,11 @@ import (
 )
 
 const (
-	VERSION   = "0.1.1"
+	VERSION   = "0.2.0"
 	ADDR_SPEC = "Can be either an IPv4 address, a subnet, one of the special aliases ('.' = container IPv4, '/' = docker host IPv4) or a container id. If an IPv4 address is specified and no subnet, '/32' will be added. Default is '.'"
 	// directly from Docker
 	validContainerNameChars = `[a-zA-Z0-9][a-zA-Z0-9_.-]`
-	DRY_RUN = false
+	DRY_RUN                 = false
 )
 
 type Action struct {
@@ -56,7 +56,7 @@ var (
 func NewAction(action string, allowParseNames bool) *Action {
 	var a Action
 	a.CommandSet = getopt.New()
-	a.CommandSet.SetProgram("docker-fw (init|start|allow|add|add-input|add-internal|replay|drop) containerId")
+	a.CommandSet.SetProgram("docker-fw (init|start|allow|add|add-input|add-internal|save-hostconfig|replay|drop) containerId")
 	a.CommandSet.SetParameters("\n\nSyntax for all add actions:\n\tdocker-fw (add|add-input|add-internal) ...")
 	a.Action = action
 
@@ -133,6 +133,7 @@ under certain conditions`, VERSION)
 	fmt.Printf("\n* = %s\n", ADDR_SPEC)
 	fmt.Printf("\nSyntax for 'allow' action:\n\tdocker-fw allow address1 [address2] [address3] [...] [addressN]\nA list of IPv4 addresses is accepted\n\n")
 	fmt.Printf("Syntax for 'drop' action:\n\tdocker-fw drop container1 [container2] [container3] [...] [containerN]\nA list of container IDs/names is accepted\n\n")
+	fmt.Printf("Syntax for 'save-hostconfig' action:\n\tdocker-fw save-hostconfig container1 [container2] [container3] [...] [containerN]\nA list of container IDs/names is accepted\n\n")
 	fmt.Printf("Syntax for 'replay' action:\n\tdocker-fw replay container1 [container2] [container3] [...] [containerN]\nA list of container IDs/names is accepted\n\n")
 	fmt.Printf("Syntax for 'start' action:\n\tdocker-fw replay [--paused] [--pull-deps] container1 [container2] [container3] [...] [containerN]\n")
 	fmt.Printf("A list of container IDs/names is accepted; option '--paused' allows to start containers in paused status, option '--pull-deps' allows to pull dependencies in selection\n")
@@ -273,6 +274,7 @@ func main() {
 		return
 	case "replay":
 	case "drop":
+	case "save-hostconfig":
 		if len(os.Args) < 3 {
 			log.Fatalf("%s: no container ids specified", cliArgs.Action)
 			os.Exit(1)
@@ -295,6 +297,9 @@ func main() {
 			break
 		case "drop":
 			err = DropRules(containerIds)
+			break
+		case "save-hostconfig":
+			err = BackupHostConfig(containerIds, false)
 			break
 		default:
 			panic("invalid exit point")

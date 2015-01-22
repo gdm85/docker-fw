@@ -24,7 +24,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/fsouza/go-dockerclient"
+	"github.com/gdm85/go-dockerclient"
 	"io/ioutil"
 	"log"
 	"os"

@@ -20,7 +20,13 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 package main
 
 import (
-	"github.com/fsouza/go-dockerclient"
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"github.com/gdm85/go-dockerclient"
+	"io/ioutil"
+	"os"
 )
 
 var Docker *docker.Client
@@ -31,4 +37,101 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
+}
+
+func getBackupHostConfigFileName(cid string) string {
+	return fmt.Sprintf("/var/lib/docker/containers/%s/backupHostConfig.json", cid)
+}
+
+//NOTE: containre must be running for this to work
+func BackupHostConfig(containerIds []string, failOnChange bool) error {
+	for _, cid := range containerIds {
+		container, err := ccl.LookupOnlineContainer(cid)
+		if err != nil {
+			return err
+		}
+
+		if !container.State.Running {
+			return errors.New(fmt.Sprintf("Container %s does is not running", cid))
+		}
+
+		// validate that nothing has changed
+		// (this is a testing feature)
+		if failOnChange {
+			origHostConfigBytes, err := fetchSavedHostConfigAsBytes(cid)
+			if err != nil {
+				return err
+			}
+
+			if origHostConfigBytes != nil {
+				// proceed to validate that nothing changed since last execution time
+				currentHostConfigBytes, err := json.Marshal(container.HostConfig)
+				if err != nil {
+					return err
+				}
+
+				if bytes.Compare(currentHostConfigBytes, origHostConfigBytes) != 0 {
+					return errors.New("HostConfig changed after start")
+				}
+			}
+		}
+
+		err = saveHostConfig(cid, container.HostConfig)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func saveHostConfig(cid string, hostConfig *docker.HostConfig) error {
+	bytes, err := json.Marshal(hostConfig)
+	if err != nil {
+		return err
+	}
+	err = ioutil.WriteFile(getBackupHostConfigFileName(cid), bytes, 0666)
+	return err
+}
+
+func fetchSavedHostConfigAsBytes(id string) ([]byte, error) {
+	fileName := getBackupHostConfigFileName(id)
+
+	_, err := os.Stat(fileName)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return nil, err
+		}
+
+		// nothing found, and no error either
+		return nil, nil
+	}
+
+	// read only when existing
+	bytes, err := ioutil.ReadFile(fileName)
+	if err != nil {
+		return nil, err
+	}
+
+	return bytes, nil
+}
+
+func fetchSavedHostConfig(id string) (*docker.HostConfig, error) {
+	hostConfig := docker.HostConfig{}
+	bytes, err := fetchSavedHostConfigAsBytes(id)
+	if err != nil {
+		return nil, err
+	}
+
+	// nothing found
+	if bytes == nil {
+		return nil, nil
+	}
+
+	err = json.Unmarshal(bytes, &hostConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	return &hostConfig, nil
 }
