@@ -119,6 +119,34 @@ func (a *Action) Validate() error {
 	return nil
 }
 
+func runCommandsFromScanner(scanner *bufio.Scanner, action string) error {
+	lineNo := 0
+	for scanner.Scan() {
+		lineNo++
+
+		// create a new 'commandLine' for each input line,
+		// but always use same action for all lines
+		commandLine := NewAction(action, false)
+		// set executable name
+		newArgs := []string{os.Args[0]}
+		newArgs = append(newArgs, strings.Split(scanner.Text(), " ")...)
+		if err := commandLine.Parse(newArgs); err != nil {
+			return errors.New(fmt.Sprintf("%s: error at line %d: %s", commandLine.Action, lineNo, err))
+		}
+
+		err := commandLine.Run()
+		if err != nil {
+			return errors.New(fmt.Sprintf("[file] %s: %s", commandLine.Action, err))
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (a *Action) Parse(args []string) error {
 	return a.CommandSet.Getopt(args, nil)
 }
@@ -164,6 +192,19 @@ func (a *Action) Run() error {
 		panic("cannot execute this action: " + a.Action)
 	}
 	return err
+}
+
+func performAction(action string, containerIds []string) error {
+	switch action {
+	case "replay":
+		return ReplayRules(containerIds)
+	case "drop":
+		return DropRules(containerIds)
+	case "save-hostconfig":
+		return BackupHostConfig(containerIds, false)
+	default:
+		panic("invalid action: " + action)
+	}
 }
 
 func main() {
@@ -275,9 +316,7 @@ func main() {
 		}
 		os.Exit(0)
 		return
-	case "replay":
-	case "drop":
-	case "save-hostconfig":
+	case "replay", "drop", "save-hostconfig":
 		if len(os.Args) < 3 {
 			log.Fatalf("%s: no container ids specified", cliArgs.Action)
 			os.Exit(1)
@@ -293,26 +332,13 @@ func main() {
 			containerIds = append(containerIds, arg)
 		}
 
-		var err error
-		switch cliArgs.Action {
-		case "replay":
-			err = ReplayRules(containerIds)
-			break
-		case "drop":
-			err = DropRules(containerIds)
-			break
-		case "save-hostconfig":
-			err = BackupHostConfig(containerIds, false)
-			break
-		default:
-			panic("invalid exit point")
-		}
-		// parse error
+		err := performAction(cliArgs.Action, containerIds)
 		if err != nil {
 			log.Printf("%s: %s", cliArgs.Action, err)
 			os.Exit(2)
 			return
 		}
+
 		os.Exit(0)
 		return
 
@@ -346,54 +372,37 @@ func main() {
 		return
 	}
 
-	// when a source for a list of actions is specified, no further parameters can be specified
-	if fromArg.Seen() {
-
-		if cliArgs.SourceArg.Seen() || cliArgs.SourcePortArg.Seen() || cliArgs.DestArg.Seen() || cliArgs.DestPortArg.Seen() || cliArgs.ProtoArg.Seen() || cliArgs.FilterArg.Seen() {
-			log.Fatal("When using --from, only '--rev-lookup' is allowed")
+	// if a source for a list of actions is not specified, take a shortcut to direct action processing
+	if !fromArg.Seen() {
+		err := cliArgs.Run()
+		if err != nil {
+			log.Fatalf("%s: %s", cliArgs.Action, err)
 			return
 		}
 
-		// read all commands line by line from stdin
-		if from == "-" {
-			scanner := bufio.NewScanner(os.Stdin)
-			lineNo := 0
-			for scanner.Scan() {
-				lineNo++
+		// success
+		os.Exit(0)
 
-				// create a new 'commandLine' for each input line,
-				// but always use same action for all lines
-				commandLine := NewAction(cliArgs.Action, false)
-				// set executable name
-				newArgs := []string{os.Args[0]}
-				newArgs = append(newArgs, strings.Split(scanner.Text(), " ")...)
-				if err := commandLine.Parse(newArgs); err != nil {
-					fmt.Fprintln(os.Stderr, "%s: error at line %d: %s", commandLine.Action, lineNo, err)
-					os.Exit(1)
-					return
-				}
+	}
 
-				err := commandLine.Run()
-				if err != nil {
-					log.Fatalf("%s: %s", commandLine.Action, err)
-					return
-				}
-			}
+	if cliArgs.SourceArg.Seen() || cliArgs.SourcePortArg.Seen() || cliArgs.DestArg.Seen() || cliArgs.DestPortArg.Seen() || cliArgs.ProtoArg.Seen() || cliArgs.FilterArg.Seen() {
+		log.Fatal("When using --from, only '--rev-lookup' is allowed")
+		return
+	}
 
-			if err := scanner.Err(); err != nil {
-				log.Fatal(err)
-			}
-			os.Exit(1)
+	// read all commands line by line from stdin
+	var err error
+	if from == "-" {
+		err = runCommandsFromScanner(bufio.NewScanner(os.Stdin), cliArgs.Action)
+	} else {
+		file, err := os.Open(from)
+		if err == nil {
+			defer file.Close()
+			err = runCommandsFromScanner(bufio.NewScanner(file), cliArgs.Action)
 		}
-		return
 	}
 
-	err := cliArgs.Run()
 	if err != nil {
-		log.Fatalf("%s: %s", cliArgs.Action, err)
-		return
+		log.Fatal(err)
 	}
-
-	// success
-	os.Exit(0)
 }
