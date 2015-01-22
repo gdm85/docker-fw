@@ -109,7 +109,7 @@ This command is explicitly meant to allow access from external networks to the c
 Start
 -----
 
-	docker-fw start [--paused] [--pull-deps] container1 [container2] [container3] [...] [containerN]
+	docker-fw start [--dry-run] [--paused] [--pull-deps] container1 [container2] [container3] [...] [containerN]
 
 It does the following:
  - sort input list of containers second their dependencies
@@ -119,6 +119,7 @@ It does the following:
 The option --paused allows to start containers in paused status (for example in case user doesn't want to allow any activity until all firewall restore operations are completed).
 The option --pull-deps will automatically make dependant (by link relationship) containers part of the selection.
 If a container is already started or paused, its state is not changed.
+By specifying --dry-run containers will be displayed in the order they would be started, but their state will not be changed.
 
 Internals
 =========

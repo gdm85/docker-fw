@@ -239,6 +239,15 @@ func StartContainers(containerIds []string, startPaused, pullDeps, dryRun bool) 
 		return err
 	}
 
+	if dryRun {
+		for i := len(result.Leaves) - 1; i >= 0; i-- {
+			container := result.Leaves[i].Self
+			fmt.Printf("%s\n", container.Name[1:])
+		}
+
+		return nil
+	}
+
 	for i := len(result.Leaves) - 1; i >= 0; i-- {
 		nonUpToDateNode := result.Leaves[i]
 		if dryRun {
@@ -288,15 +297,13 @@ func StartContainers(containerIds []string, startPaused, pullDeps, dryRun bool) 
 	/// split start from rules application due to glitch/bug (see https://github.com/docker/docker/issues/10188)
 	///
 
-	if !dryRun {
-		for i := len(result.Leaves) - 1; i >= 0; i-- {
-			node := result.Leaves[i]
+	for i := len(result.Leaves) - 1; i >= 0; i-- {
+		node := result.Leaves[i]
 
-			// always run the 'replay' action
-			err := ReplayRules([]string{node.Self.ID})
-			if err != nil {
-				return err
-			}
+		// always run the 'replay' action
+		err := ReplayRules([]string{node.Self.ID})
+		if err != nil {
+			return err
 		}
 	}
 

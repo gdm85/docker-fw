@@ -36,7 +36,6 @@ const (
 	ADDR_SPEC = "Can be either an IPv4 address, a subnet, one of the special aliases ('.' = container IPv4, '/' = docker host IPv4) or a container id. If an IPv4 address is specified and no subnet, '/32' will be added. Default is '.'"
 	// directly from Docker
 	validContainerNameChars = `[a-zA-Z0-9][a-zA-Z0-9_.-]`
-	DRY_RUN                 = false
 )
 
 type Action struct {
@@ -135,8 +134,8 @@ under certain conditions`, VERSION)
 	fmt.Printf("Syntax for 'drop' action:\n\tdocker-fw drop container1 [container2] [container3] [...] [containerN]\nA list of container IDs/names is accepted\n\n")
 	fmt.Printf("Syntax for 'save-hostconfig' action:\n\tdocker-fw save-hostconfig container1 [container2] [container3] [...] [containerN]\nA list of container IDs/names is accepted\n\n")
 	fmt.Printf("Syntax for 'replay' action:\n\tdocker-fw replay container1 [container2] [container3] [...] [containerN]\nA list of container IDs/names is accepted\n\n")
-	fmt.Printf("Syntax for 'start' action:\n\tdocker-fw replay [--paused] [--pull-deps] container1 [container2] [container3] [...] [containerN]\n")
-	fmt.Printf("A list of container IDs/names is accepted; option '--paused' allows to start containers in paused status, option '--pull-deps' allows to pull dependencies in selection\n")
+	fmt.Printf("Syntax for 'start' action:\n\tdocker-fw replay [--dry-run] [--paused] [--pull-deps] container1 [container2] [container3] [...] [containerN]\n")
+	fmt.Printf("A list of container IDs/names is accepted; option '--paused' allows to start containers in paused status, option '--pull-deps' allows to pull dependencies in selection, option --dry-run shows container names in the order they would be started without changing their state\n")
 }
 
 func (a *Action) Run() error {
@@ -236,6 +235,7 @@ func main() {
 		}
 		containerIds := []string{}
 		paused := false
+		dryRun := false
 		pullDeps := false
 		for _, arg := range os.Args[2:] {
 			// is the famous '--paused' option?
@@ -243,6 +243,9 @@ func main() {
 				switch arg {
 				case "--paused":
 					paused = true
+					break
+				case "--dry-run":
+					dryRun = true
 					break
 				case "--pull-deps":
 					pullDeps = true
@@ -263,7 +266,7 @@ func main() {
 			containerIds = append(containerIds, arg)
 		}
 
-		err := StartContainers(containerIds, paused, pullDeps, DRY_RUN)
+		err := StartContainers(containerIds, paused, pullDeps, dryRun)
 		// parse error
 		if err != nil {
 			log.Printf("%s: %s", cliArgs.Action, err)
