@@ -186,15 +186,14 @@ func StartContainers(containerIds []string, startPaused, pullDeps, dryRun bool) 
 	// apply topological sort
 	allNodes = allNodes.TopSort()
 
-	if dryRun {
-		for _, node := range allNodes {
-			fmt.Println(node.Name)
+	for _, node := range allNodes {
+		// print container names as they are started, Docker-style
+		fmt.Println(node.Name)
+
+		if dryRun {
+			continue
 		}
 
-		return nil
-	}
-
-	for _, node := range allNodes {
 		// always get latest version, since state might have changed
 		container, err := ccl.LookupContainer(node.ID)
 		if err != nil {
@@ -209,16 +208,17 @@ func StartContainers(containerIds []string, startPaused, pullDeps, dryRun bool) 
 				return err
 			}
 			changedState = true
-		} else {
 
-			if startPaused && !container.State.Paused {
-				//NOTE: container might already have been paused in command above
-				err := Docker.PauseContainer(container.ID)
-				if err != nil {
-					return err
-				}
-				changedState = true
+			//NOTE: container's paused status has not changed because of start
+		}
+
+		if startPaused && !container.State.Paused {
+			//NOTE: container might already have been paused in command above
+			err := Docker.PauseContainer(container.ID)
+			if err != nil {
+				return err
 			}
+			changedState = true
 		}
 
 		if changedState {
@@ -228,6 +228,10 @@ func StartContainers(containerIds []string, startPaused, pullDeps, dryRun bool) 
 				return err
 			}
 		}
+	}
+
+	if dryRun {
+		return nil
 	}
 
 	// attempt to save again network rules
