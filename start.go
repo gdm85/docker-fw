@@ -24,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/gdm85/go-dockerclient"
+	"log"
 	"strings"
 )
 
@@ -35,18 +36,6 @@ func arrayContains(haystack []*docker.Container, needle *docker.Container) bool 
 		}
 	}
 	return false
-}
-
-func wrapperDockerPause(container *docker.Container) error {
-	err := Docker.PauseContainer(container.ID)
-	if err != nil {
-		return err
-	}
-
-	// this will enforce container to be online
-	err = ccl.RefreshContainer(container.ID, true)
-
-	return err
 }
 
 // this fix is necessary for an undocumented bug: you cannot feed back to API what you got it from regarding Links
@@ -75,14 +64,17 @@ func fixHostConfig(name string, orig *docker.HostConfig) {
 	orig.Links = newLinks
 }
 
-func wrapperDockerStart(container *docker.Container, ignoredStartPaused bool) error {
+func startAndSave(container *docker.Container) error {
 	hostConfig, err := fetchSavedHostConfig(container.ID)
 	if err != nil {
 		return err
 	}
 
 	if hostConfig == nil {
-		return errors.New("No saved HostConfig found")
+		log.Printf("WARNING: no saved HostConfig found for container '%s'", container.Name[1:])
+
+		// use the blank one
+		hostConfig = container.HostConfig
 	}
 
 	fixHostConfig(container.Name, hostConfig)
@@ -209,27 +201,31 @@ func StartContainers(containerIds []string, startPaused, pullDeps, dryRun bool) 
 			return err
 		}
 
+		changedState := false
 		// start container
 		if !container.State.Running {
-			err := wrapperDockerStart(container, startPaused)
+			err := startAndSave(container)
 			if err != nil {
 				return err
 			}
+			changedState = true
+		} else {
 
+			if startPaused && !container.State.Paused {
+				//NOTE: container might already have been paused in command above
+				err := Docker.PauseContainer(container.ID)
+				if err != nil {
+					return err
+				}
+				changedState = true
+			}
+		}
+
+		if changedState {
 			// always get latest version, since state might have changed
 			container, err = ccl.LookupContainer(node.ID)
 			if err != nil {
 				return err
-			}
-		}
-
-		if startPaused {
-			if !container.State.Paused {
-				//NOTE: container might already have been paused in command above
-				err := wrapperDockerPause(container)
-				if err != nil {
-					return err
-				}
 			}
 		}
 	}
