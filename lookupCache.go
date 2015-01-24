@@ -37,6 +37,23 @@ type CachedContainerLookup struct {
 	loadedAll bool
 }
 
+func (ccl *CachedContainerLookup) GetAllContainers() []*docker.Container {
+	lookupByPtr := map[*docker.Container]bool{}
+	for _, container := range ccl.containers {
+		// overwrite without fear, as no multiple container pointers are at any time being used
+		// and this prevents duplicates here
+		lookupByPtr[container] = true
+	}
+
+	// get the values
+	containers := []*docker.Container{}
+	for p, _ := range lookupByPtr {
+		containers = append(containers, p)
+	}
+
+	return containers
+}
+
 func (ccl *CachedContainerLookup) lookupInternal(cid string, mustBeOnline bool) (*docker.Container, error) {
 	if len(cid) == 0 {
 		panic("empty container id passed to lookupInternal")
@@ -151,7 +168,7 @@ func (ccl *CachedContainerLookup) LoadAllContainers() error {
 		ccl.containers[customId] = ccl.containers[ccl.containers[customId].ID]
 	}
 
-	// prevent loading any other entry for the whole time of program execution
+	// prevent loading any other entry for the whole program execution
 	ccl.loadedAll = true
 
 	return nil
@@ -188,6 +205,7 @@ func applySelfReduction(foundContainer *docker.Container, self *docker.Container
 
 // first return value is ipv4
 // second return value is alias
+// as aliases, names are preferred over IDs
 func (ccl *CachedContainerLookup) ParseAddress(addressOrAlias string, self *docker.Container, parseContainerNames bool) (string, string, error) {
 	switch addressOrAlias {
 	case ".":
@@ -207,10 +225,10 @@ func (ccl *CachedContainerLookup) ParseAddress(addressOrAlias string, self *dock
 			// disallow specifying IPs in Docker subnet (unless specifically allowed)
 			if isDockerIPv4(ipv4) && strings.HasSuffix(ipv4, "/32") {
 				if !parseContainerNames {
-					return "", "", errors.New("Trying to use Docker IPv4, use an alias instead")
+					return "", "", errors.New("trying to use Docker IPv4, use an alias instead")
 				}
 
-				// attempt to parse this IPv4 as a container name
+				// load all containers - will use a cache
 				err := ccl.LoadAllContainers()
 				if err != nil {
 					return "", "", err

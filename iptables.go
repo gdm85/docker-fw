@@ -57,6 +57,14 @@ type ActiveIptablesRule struct {
 	JumpTo string
 }
 
+type IptablesRulesCollection struct {
+	cid   string
+	Rules []*ActiveIptablesRule
+}
+
+var matchIpv4 *regexp.Regexp
+var ccl *CachedContainerLookup
+
 func (r *ActiveIptablesRule) Position() int {
 	if r.Chain == "FORWARD" {
 		return 2
@@ -66,9 +74,6 @@ func (r *ActiveIptablesRule) Position() int {
 		panic("Cannot determine position for chain " + r.Chain)
 	}
 }
-
-var matchIpv4 *regexp.Regexp
-var ccl *CachedContainerLookup
 
 func init() {
 	// test that iptables works
@@ -266,6 +271,22 @@ func AllowExternal(cid string, whitelist4 []string) error {
 	return nil
 }
 
+// format in docker-fw style
+func (rule *IptablesRule) FormatAsFwAction() string {
+	s := fmt.Sprintf("-s %s -d %s -p %s", rule.SourceAliasOrAddress(), rule.DestinationAliasOrAddress(), rule.Protocol)
+	if rule.Filter != "" {
+		s += fmt.Sprintf(" --filter '%s'", rule.Filter)
+	}
+	if rule.DestinationPort != 0 {
+		s += fmt.Sprintf(" --dport %d", rule.DestinationPort)
+	}
+	if rule.SourcePort != 0 {
+		s += fmt.Sprintf(" --sport %d", rule.SourcePort)
+	}
+
+	return s
+}
+
 func (rule *IptablesRule) Format() string {
 	s := fmt.Sprintf("-s %s -d %s %s -p %s -m %s", rule.Source, rule.Destination, rule.Filter, rule.Protocol, rule.Protocol)
 	if rule.DestinationPort != 0 {
@@ -282,6 +303,42 @@ func (rule *ActiveIptablesRule) Format() string {
 	return fmt.Sprintf("%s %s -j %s", rule.Chain, rule.IptablesRule.Format(), rule.JumpTo)
 }
 
+// guess the action that was used to create this rule
+// NOTE: rules create through 'allow' will not return back an 'allow' action
+func (rule *ActiveIptablesRule) ExtrapolateAction() string {
+	if rule.Chain == "INPUT" && rule.JumpTo == "ACCEPT" {
+		return "add-input"
+	}
+	if rule.Chain == DOCKER_CHAIN && rule.JumpTo == "ACCEPT" {
+		return "add-internal"
+	}
+	if rule.Chain == "FORWARD" && rule.JumpTo == DOCKER_CHAIN {
+		return "add"
+	}
+	panic("not yet implemented: proper de-serialization of rule " + rule.Format())
+}
+
+func (rule *ActiveIptablesRule) FormatAsFwCommand(target string) string {
+	return fmt.Sprintf("%s %s %s", rule.ExtrapolateAction(), target, rule.IptablesRule.FormatAsFwAction())
+}
+
+func (rule *IptablesRule) SourceAliasOrAddress() string {
+	if rule.SourceAlias != "" {
+		return rule.SourceAlias
+	}
+
+	return rule.Source
+}
+
+func (rule *IptablesRule) DestinationAliasOrAddress() string {
+	if rule.DestinationAlias != "" {
+		return rule.DestinationAlias
+	}
+
+	return rule.Destination
+}
+
+// used for comparison of rules
 func (rule *IptablesRule) Aliases() string {
 	s := ""
 	if rule.DestinationAlias != "" {
@@ -307,7 +364,7 @@ func addFirewallRule(container *docker.Container, iptRule *IptablesRule) error {
 	addedRule := ActiveIptablesRule{Chain: "FORWARD", JumpTo: DOCKER_CHAIN}
 	addedRule.IptablesRule = *iptRule
 
-	// add always on top
+	// insert always on top
 	// NOTE: the catchall "-o docker0 -j DOCKER" must *not* exist in table
 	err := internalInsert(addedRule.Position(), addedRule.Format())
 	if err != nil {
@@ -351,11 +408,6 @@ func AddInternalRule(cid string, iptRule *IptablesRule) error {
 	}
 
 	return recordRule(container, &addedRule)
-}
-
-type IptablesRulesCollection struct {
-	cid   string
-	Rules []*ActiveIptablesRule
 }
 
 func (c *IptablesRulesCollection) Append(iptRule *ActiveIptablesRule) {
@@ -564,21 +616,27 @@ func ReplayRules(containerIds []string, dryRun bool) (int, error) {
 				}
 			}
 
-			// first, (attempt to) remove old rule
-			if dryRun {
-				if RuleExists(oldRule) {
-					fmt.Printf("iptables(%s): would delete rule '%s'\n", container.Name, oldRule)
-					hasChanges = true
+			// create the rule that it is necessary to have
+			rule := r.Format()
+
+			// skip deleting/re-adding if rule is not any different than previous
+			if rule != oldRule {
+				// first, (attempt to) remove old rule
+				if dryRun {
+					if RuleExists(oldRule) {
+						fmt.Printf("iptables(%s): would delete rule '%s'\n", container.Name[1:], oldRule)
+						hasChanges = true
+					}
+				} else {
+					_ = internalDelete(oldRule, true)
 				}
-			} else {
-				_ = internalDelete(oldRule, true)
 			}
 
 			// check if new rule is already there
-			rule := r.Format()
-			if RuleExists(rule) {
-				fmt.Printf("iptables(%s): rule '%s' already exists\n", container.Name, rule)
-			} else {
+
+			if !RuleExists(rule) {
+				//fmt.Printf("iptables(%s): rule '%s' does not exist\n", container.Name[1:], rule)
+
 				// insert or append, depending on destination chain
 				if r.Chain == DOCKER_CHAIN {
 					if dryRun {
@@ -626,4 +684,43 @@ func ReplayRules(containerIds []string, dryRun bool) (int, error) {
 
 	// exit with 0 since all operations were successful
 	return 0, nil
+}
+
+func ListRules(containerIds []string) error {
+	containers := []*docker.Container{}
+	if len(containerIds) == 0 {
+		err := ccl.LoadAllContainers()
+		if err != nil {
+			return err
+		}
+
+		containers = ccl.GetAllContainers()
+	} else {
+		for _, cid := range containerIds {
+			container, err := ccl.LookupContainer(cid)
+			if err != nil {
+				return err
+			}
+
+			containers = append(containers, container)
+		}
+	}
+
+	// loop through each container and display the ready-to-use add* action
+	for _, container := range containers {
+		collection, err := LoadRules(container)
+		if err != nil {
+			return err
+		}
+
+		if len(collection.Rules) == 0 {
+			continue
+		}
+
+		for _, r := range collection.Rules {
+			fmt.Printf("%s\n", r.FormatAsFwCommand(container.Name[1:]))
+		}
+	}
+
+	return nil
 }

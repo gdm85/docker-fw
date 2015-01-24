@@ -55,7 +55,7 @@ var (
 func NewAction(action string, allowParseNames bool) *Action {
 	var a Action
 	a.CommandSet = getopt.New()
-	a.CommandSet.SetProgram("docker-fw (init|start|allow|add|add-input|add-internal|save-hostconfig|replay|drop) containerId")
+	a.CommandSet.SetProgram("docker-fw (init|start|allow|add|add-input|add-internal|ls|save-hostconfig|replay|drop) containerId")
 	a.CommandSet.SetParameters("\n\nSyntax for all add actions:\n\tdocker-fw (add|add-input|add-internal) ...")
 	a.Action = action
 
@@ -159,6 +159,7 @@ under certain conditions`, VERSION)
 	a.CommandSet.PrintUsage(os.Stdout)
 	fmt.Printf("\n* = %s\n", ADDR_SPEC)
 	fmt.Printf("\nSyntax for 'allow' action:\n\tdocker-fw allow address1 [address2] [address3] [...] [addressN]\nA list of IPv4 addresses is accepted\n\n")
+	fmt.Printf("Syntax for 'ls' action:\n\tdocker-fw ls [container1] [container2] [container3] [...] [containerN]\nA list of 0 or more container IDs/names is accepted\n\n")
 	fmt.Printf("Syntax for 'drop' action:\n\tdocker-fw drop container1 [container2] [container3] [...] [containerN]\nA list of container IDs/names is accepted\n\n")
 	fmt.Printf("Syntax for 'save-hostconfig' action:\n\tdocker-fw save-hostconfig container1 [container2] [container3] [...] [containerN]\nA list of container IDs/names is accepted\n\n")
 	fmt.Printf("Syntax for 'replay' action:\n\tdocker-fw replay [--dry-run] container1 [container2] [container3] [...] [containerN]\nA list of container IDs/names is accepted\n\n")
@@ -339,6 +340,26 @@ func main() {
 		}
 
 		os.Exit(exitCode)
+		return
+	case "ls":
+		containerIds := []string{}
+		for _, arg := range os.Args[2:] {
+			// pick container id
+			if !containerIdMatch.MatchString(arg) {
+				log.Fatalf("not a valid container id: %s", arg)
+				return
+			}
+			containerIds = append(containerIds, arg)
+		}
+
+		err := ListRules(containerIds)
+		if err != nil {
+			log.Printf("%s: %s", cliArgs.Action, err)
+			os.Exit(2)
+			return
+		}
+
+		os.Exit(0)
 		return
 	case "drop", "save-hostconfig":
 		if len(os.Args) < 3 {

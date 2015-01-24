@@ -3,7 +3,7 @@ Docker-fw
 
 docker-fw is a complementary tool for [Docker](https://docker.com/) to manage internal firewall rules between Docker containers or rules from other subnets targeting them; it features persistence to allow users restoring such firewall rules in case host or container are restarted.
 
-docker-fw expects your firewall to be using the ``*filter FORWARD`` chain with a default policy of REJECT/DROP (or an equivalent rule at bottom).
+docker-fw expects your firewall to be using the ``*filter FORWARD`` chain with a default policy of REJECT/DROP (or an equivalent rule at bottom); this is default behavior starting from Docker version 1.5.
 
 docker-fw does not work well with Docker daemon ``--restart`` options because docker-fw would not be called automatically on container start. However, you can customize initialization of containers on host boot script via ``/etc/rc.local``, for example to loop through existing containers and initialize their firewall rules using ``docker-fw start``.
 
@@ -81,7 +81,7 @@ It always happens by default after a successful start.
 
 See also https://github.com/docker/docker/issues/8723
 
-	docker-fw save-ns container1 [container2] [container3] [...] [containerN]
+	docker-fw save-hostconfig container1 [container2] [container3] [...] [containerN]
 
 Replay
 ------
@@ -90,6 +90,13 @@ Replay all firewall rules; will not add them again if existing on current iptabl
 Use ``--dry-run`` to display which stateful changes would be applied, and report exit code zero only if there would be none.
 
 	docker-fw replay [--dry-run] container1 [container2] [container3] [...] [containerN]
+
+Ls
+--
+
+List all existing firewall rules for specified container(s); if no container is specified, all containers' rules will be displayed.
+
+	docker-fw ls [container1] [container2] [container3] [...] [containerN]
 
 Drop
 ----
