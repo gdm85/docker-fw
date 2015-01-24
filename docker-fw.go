@@ -1,7 +1,7 @@
 /*
- * docker-fw v0.2.0 - a complementary tool for Docker to manage custom
+ * docker-fw v0.2.1 - a complementary tool for Docker to manage custom
  * 					  firewall rules between/towards Docker containers
- * Copyright (C) 2014 gdm85 - https://github.com/gdm85/docker-fw/
+ * Copyright (C) 2014-2015 gdm85 - https://github.com/gdm85/docker-fw/
 
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License
@@ -32,7 +32,7 @@ import (
 )
 
 const (
-	VERSION   = "0.2.0"
+	VERSION   = "0.2.1"
 	ADDR_SPEC = "Can be either an IPv4 address, a subnet, one of the special aliases ('.' = container IPv4, '/' = docker host IPv4) or a container id. If an IPv4 address is specified and no subnet, '/32' will be added. Default is '.'"
 	// directly from Docker
 	validContainerNameChars = `[a-zA-Z0-9][a-zA-Z0-9_.-]`
@@ -134,7 +134,7 @@ func runCommandsFromScanner(scanner *bufio.Scanner, action string) error {
 			return errors.New(fmt.Sprintf("%s: error at line %d: %s", commandLine.Action, lineNo, err))
 		}
 
-		err := commandLine.Run()
+		err := commandLine.ExecuteAddAction()
 		if err != nil {
 			return errors.New(fmt.Sprintf("[file] %s: %s", commandLine.Action, err))
 		}
@@ -161,12 +161,12 @@ under certain conditions`, VERSION)
 	fmt.Printf("\nSyntax for 'allow' action:\n\tdocker-fw allow address1 [address2] [address3] [...] [addressN]\nA list of IPv4 addresses is accepted\n\n")
 	fmt.Printf("Syntax for 'drop' action:\n\tdocker-fw drop container1 [container2] [container3] [...] [containerN]\nA list of container IDs/names is accepted\n\n")
 	fmt.Printf("Syntax for 'save-hostconfig' action:\n\tdocker-fw save-hostconfig container1 [container2] [container3] [...] [containerN]\nA list of container IDs/names is accepted\n\n")
-	fmt.Printf("Syntax for 'replay' action:\n\tdocker-fw replay container1 [container2] [container3] [...] [containerN]\nA list of container IDs/names is accepted\n\n")
-	fmt.Printf("Syntax for 'start' action:\n\tdocker-fw replay [--dry-run] [--paused] [--pull-deps] container1 [container2] [container3] [...] [containerN]\n")
+	fmt.Printf("Syntax for 'replay' action:\n\tdocker-fw replay [--dry-run] container1 [container2] [container3] [...] [containerN]\nA list of container IDs/names is accepted\n\n")
+	fmt.Printf("Syntax for 'start' action:\n\tdocker-fw start [--dry-run] [--paused] [--pull-deps] container1 [container2] [container3] [...] [containerN]\n")
 	fmt.Printf("A list of container IDs/names is accepted; option '--paused' allows to start containers in paused status, option '--pull-deps' allows to pull dependencies in selection, option --dry-run shows container names in the order they would be started without changing their state\n")
 }
 
-func (a *Action) Run() error {
+func (a *Action) ExecuteAddAction() error {
 	err := a.Validate()
 	if err != nil {
 		return err
@@ -188,23 +188,10 @@ func (a *Action) Run() error {
 	} else if a.Action == "add-internal" {
 		err = AddInternalRule(a.ContainerId, rule)
 	} else {
-		// only add actions are supported when importing from file
-		panic("cannot execute this action: " + a.Action)
+		// only add* actions are supported when importing from file
+		return errors.New("cannot execute this action: " + a.Action)
 	}
 	return err
-}
-
-func performAction(action string, containerIds []string) error {
-	switch action {
-	case "replay":
-		return ReplayRules(containerIds)
-	case "drop":
-		return DropRules(containerIds)
-	case "save-hostconfig":
-		return BackupHostConfig(containerIds, true, false)
-	default:
-		panic("invalid action: " + action)
-	}
 }
 
 func main() {
@@ -307,16 +294,53 @@ func main() {
 			containerIds = append(containerIds, arg)
 		}
 
-		err := StartContainers(containerIds, paused, pullDeps, dryRun)
+		exitCode, err := StartContainers(containerIds, paused, pullDeps, dryRun)
 		// parse error
 		if err != nil {
 			log.Printf("%s: %s", cliArgs.Action, err)
-			os.Exit(2)
+		}
+		os.Exit(exitCode)
+		return
+	case "replay":
+		if len(os.Args) < 3 {
+			log.Fatalf("%s: insufficient command line arguments specified", cliArgs.Action)
+			os.Exit(1)
 			return
 		}
-		os.Exit(0)
+
+		dryRun := false
+		containerIds := []string{}
+		for _, arg := range os.Args[2:] {
+
+			if arg == "--dry-run" {
+				dryRun = true
+				continue
+			}
+
+			// pick container id
+			if !containerIdMatch.MatchString(arg) {
+				log.Fatalf("not a valid container id: %s", arg)
+				return
+			}
+			containerIds = append(containerIds, arg)
+		}
+
+		if len(containerIds) == 0 {
+			log.Fatalf("%s: no containers specified", cliArgs.Action)
+			os.Exit(1)
+			return
+		}
+
+		exitCode, err := ReplayRules(containerIds, dryRun)
+		if err != nil {
+			log.Printf("%s: %s", cliArgs.Action, err)
+			os.Exit(exitCode)
+			return
+		}
+
+		os.Exit(exitCode)
 		return
-	case "replay", "drop", "save-hostconfig":
+	case "drop", "save-hostconfig":
 		if len(os.Args) < 3 {
 			log.Fatalf("%s: no container ids specified", cliArgs.Action)
 			os.Exit(1)
@@ -332,7 +356,15 @@ func main() {
 			containerIds = append(containerIds, arg)
 		}
 
-		err := performAction(cliArgs.Action, containerIds)
+		var err error
+		switch cliArgs.Action {
+		case "drop":
+			err = DropRules(containerIds)
+		case "save-hostconfig":
+			err = BackupHostConfig(containerIds, true, false)
+		default:
+			panic("not yet implemented action: " + cliArgs.Action)
+		}
 		if err != nil {
 			log.Printf("%s: %s", cliArgs.Action, err)
 			os.Exit(2)
@@ -341,7 +373,6 @@ func main() {
 
 		os.Exit(0)
 		return
-
 	case "add-internal", "add", "add-input":
 		if len(os.Args) < 3 {
 			log.Fatalf("%s: no container id specified", cliArgs.Action)
@@ -374,7 +405,7 @@ func main() {
 
 	// if a source for a list of actions is not specified, take a shortcut to direct action processing
 	if !fromArg.Seen() {
-		err := cliArgs.Run()
+		err := cliArgs.ExecuteAddAction()
 		if err != nil {
 			log.Fatalf("%s: %s", cliArgs.Action, err)
 			return
@@ -382,7 +413,6 @@ func main() {
 
 		// success
 		os.Exit(0)
-
 	}
 
 	if cliArgs.SourceArg.Seen() || cliArgs.SourcePortArg.Seen() || cliArgs.DestArg.Seen() || cliArgs.DestPortArg.Seen() || cliArgs.ProtoArg.Seen() || cliArgs.FilterArg.Seen() {

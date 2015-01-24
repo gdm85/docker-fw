@@ -1,7 +1,7 @@
 /*
- * docker-fw v0.2.0 - a complementary tool for Docker to manage custom
+ * docker-fw v0.2.1 - a complementary tool for Docker to manage custom
  * 					  firewall rules between/towards Docker containers
- * Copyright (C) 2014 gdm85 - https://github.com/gdm85/docker-fw/
+ * Copyright (C) 2014-2015 gdm85 - https://github.com/gdm85/docker-fw/
 
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License
@@ -521,16 +521,17 @@ func internalDelete(rule string, quiet bool) error {
 }
 
 // execute again all rules stored for specified container
-func ReplayRules(containerIds []string) error {
+func ReplayRules(containerIds []string, dryRun bool) (int, error) {
+	hasChanges := false
 	for _, cidx := range containerIds {
 		container, err := ccl.LookupOnlineContainer(cidx)
 		if err != nil {
-			return err
+			return 1, err
 		}
 
 		c, err := LoadRules(container)
 		if err != nil {
-			return err
+			return 2, err
 		}
 
 		changed := false
@@ -541,7 +542,7 @@ func ReplayRules(containerIds []string) error {
 			if r.SourceAlias != "" {
 				ipv4, _, err := ccl.ParseAddress(r.SourceAlias, container, false)
 				if err != nil {
-					return err
+					return 3, err
 				}
 
 				if r.Source != ipv4 {
@@ -554,7 +555,7 @@ func ReplayRules(containerIds []string) error {
 			if r.DestinationAlias != "" {
 				ipv4, _, err := ccl.ParseAddress(r.DestinationAlias, container, false)
 				if err != nil {
-					return err
+					return 4, err
 				}
 
 				if r.Destination != ipv4 {
@@ -564,7 +565,14 @@ func ReplayRules(containerIds []string) error {
 			}
 
 			// first, (attempt to) remove old rule
-			_ = internalDelete(oldRule, true)
+			if dryRun {
+				if RuleExists(oldRule) {
+					fmt.Printf("iptables(%s): would delete rule '%s'\n", container.Name, oldRule)
+					hasChanges = true
+				}
+			} else {
+				_ = internalDelete(oldRule, true)
+			}
 
 			// check if new rule is already there
 			rule := r.Format()
@@ -573,27 +581,49 @@ func ReplayRules(containerIds []string) error {
 			} else {
 				// insert or append, depending on destination chain
 				if r.Chain == DOCKER_CHAIN {
-					err := internalAppend(container.Name, rule)
-					if err != nil {
-						return err
+					if dryRun {
+						fmt.Printf("iptables(%s): would append rule '%s'\n", container.Name, rule)
+						hasChanges = true
+					} else {
+						err := internalAppend(container.Name, rule)
+						if err != nil {
+							return 5, err
+						}
 					}
 				} else {
-					err := internalInsert(r.Position(), rule)
-					if err != nil {
-						return err
+					if dryRun {
+						fmt.Printf("iptables(%s): would insert rule '%s'\n", container.Name, rule)
+						hasChanges = true
+					} else {
+						err := internalInsert(r.Position(), rule)
+						if err != nil {
+							return 6, err
+						}
 					}
 				}
 			}
 		}
 
-		// if there was any change, store them again
+		// used for dry-run exit code, report non-zero if anything would change
 		if changed {
+			hasChanges = true
+		}
+
+		// if there was any change, store them again
+		if !dryRun && changed {
 			err := c.Save()
 			if err != nil {
-				return err
+				return 7, err
 			}
 		}
 	}
 
-	return nil
+	if dryRun {
+		if hasChanges {
+			return 1, nil
+		}
+	}
+
+	// exit with 0 since all operations were successful
+	return 0, nil
 }

@@ -1,7 +1,7 @@
 /*
- * docker-fw v0.2.0 - a complementary tool for Docker to manage custom
+ * docker-fw v0.2.1 - a complementary tool for Docker to manage custom
  *                    firewall rules between/towards Docker containers
- * Copyright (C) 2014 gdm85 - https://github.com/gdm85/docker-fw/
+ * Copyright (C) 2014-2015 gdm85 - https://github.com/gdm85/docker-fw/
 
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License
@@ -91,11 +91,21 @@ func startAndSave(container *docker.Container) error {
 	return err
 }
 
+func StartContainers(containerIds []string, startPaused, pullDeps, dryRun bool) (int, error) {
+	normalizedIds, err := internalStartContainers(containerIds, startPaused, pullDeps, dryRun)
+	if err != nil {
+		return 127, err
+	}
+
+	// always run the 'replay' action at end of actions
+	return ReplayRules(normalizedIds, dryRun)
+}
+
 // 1) build a graph of container dependencies
 // 2) start them from lowest to highest dependency count
 // 3) for each container start, pause them (if asked to)
 // 4) when all containers have been started, run the 'replay' action for them
-func StartContainers(containerIds []string, startPaused, pullDeps, dryRun bool) error {
+func internalStartContainers(containerIds []string, startPaused, pullDeps, dryRun bool) ([]string, error) {
 	// first normalize all container ids to the proper 'ID' property given through inspect
 	// this is necessary because we won't allow to start dependant containers if not specified
 	var containers []*docker.Container
@@ -103,7 +113,7 @@ func StartContainers(containerIds []string, startPaused, pullDeps, dryRun bool) 
 	for _, cid := range containerIds {
 		container, err := ccl.LookupContainer(cid)
 		if err != nil {
-			return err
+			return normalizedIds, err
 		}
 
 		containers = append(containers, container)
@@ -128,13 +138,13 @@ func StartContainers(containerIds []string, startPaused, pullDeps, dryRun bool) 
 			linkName := parts[0][1:]
 			linkContainer, err := ccl.LookupContainer(linkName)
 			if err != nil {
-				return err
+				return normalizedIds, err
 			}
 
 			// error if a container is missing from selection and no --pull-deps was specified
 			if !pullDeps {
 				if !arrayContains(containers, linkContainer) {
-					return errors.New(fmt.Sprintf("container '%s' is not specified in list and no --pull-deps specified", linkName))
+					return normalizedIds, errors.New(fmt.Sprintf("container '%s' is not specified in list and no --pull-deps specified", linkName))
 				}
 			}
 
@@ -155,13 +165,13 @@ func StartContainers(containerIds []string, startPaused, pullDeps, dryRun bool) 
 			// identify the provider container
 			volsContainer, err := ccl.LookupContainer(volumesProvider)
 			if err != nil {
-				return err
+				return normalizedIds, err
 			}
 
 			// error if a container is missing from selection and no --pull-deps was specified
 			if !pullDeps {
 				if !arrayContains(containers, volsContainer) {
-					return errors.New(fmt.Sprintf("container '%s' (volumes provider) is not specified in list and no --pull-deps specified", volsContainer.Name[1:]))
+					return normalizedIds, errors.New(fmt.Sprintf("container '%s' (volumes provider) is not specified in list and no --pull-deps specified", volsContainer.Name[1:]))
 				}
 			}
 
@@ -197,7 +207,7 @@ func StartContainers(containerIds []string, startPaused, pullDeps, dryRun bool) 
 		// always get latest version, since state might have changed
 		container, err := ccl.LookupContainer(node.ID)
 		if err != nil {
-			return err
+			return normalizedIds, err
 		}
 
 		changedState := false
@@ -205,7 +215,7 @@ func StartContainers(containerIds []string, startPaused, pullDeps, dryRun bool) 
 		if !container.State.Running {
 			err := startAndSave(container)
 			if err != nil {
-				return err
+				return normalizedIds, err
 			}
 			changedState = true
 
@@ -216,7 +226,7 @@ func StartContainers(containerIds []string, startPaused, pullDeps, dryRun bool) 
 			//NOTE: container might already have been paused in command above
 			err := Docker.PauseContainer(container.ID)
 			if err != nil {
-				return err
+				return normalizedIds, err
 			}
 			changedState = true
 		}
@@ -225,31 +235,19 @@ func StartContainers(containerIds []string, startPaused, pullDeps, dryRun bool) 
 			// always get latest version, since state might have changed
 			container, err = ccl.LookupContainer(node.ID)
 			if err != nil {
-				return err
+				return normalizedIds, err
 			}
 		}
 	}
 
-	if dryRun {
-		return nil
+	if !dryRun {
+		// attempt to save again network rules
+		// NOTE: will fail if any change is detected
+		err := BackupHostConfig(normalizedIds, true, true)
+		if err != nil {
+			return normalizedIds, err
+		}
 	}
 
-	// attempt to save again network rules
-	// NOTE: will fail if any change is detected
-	err := BackupHostConfig(normalizedIds, true, true)
-	if err != nil {
-		return err
-	}
-
-	///
-	/// split start from rules application due to glitch/bug (see https://github.com/docker/docker/issues/10188)
-	///
-
-	// always run the 'replay' action
-	err = ReplayRules(normalizedIds)
-	if err != nil {
-		return err
-	}
-
-	return err
+	return normalizedIds, nil
 }

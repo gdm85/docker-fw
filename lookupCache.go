@@ -1,7 +1,7 @@
 /*
- * docker-fw v0.2.0 - a complementary tool for Docker to manage custom
+ * docker-fw v0.2.1 - a complementary tool for Docker to manage custom
  * 					  firewall rules between/towards Docker containers
- * Copyright (C) 2014 gdm85 - https://github.com/gdm85/docker-fw/
+ * Copyright (C) 2014-2015 gdm85 - https://github.com/gdm85/docker-fw/
 
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License

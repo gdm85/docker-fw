@@ -87,8 +87,9 @@ Replay
 ------
 
 Replay all firewall rules; will not add them again if existing on current iptables and will update the IPv4 addresses referenced in source/destination by looking up the aliases (if any specified).
+Use ``--dry-run`` to display which stateful changes would be applied, and report exit code zero only if there would be none.
 
-	docker-fw replay container1 [container2] [container3] [...] [containerN]
+	docker-fw replay [--dry-run] container1 [container2] [container3] [...] [containerN]
 
 Drop
 ----
