@@ -1,11 +1,11 @@
 Docker-fw
 =========
 
-docker-fw is a complementary tool for [Docker](https://docker.com/) to manage internal firewall rules between Docker containers or rules from other subnets targeting them; it features persistence to allow users restoring such firewall rules in case host or container are restarted.
+docker-fw is a complementary tool for [Docker](https://docker.com/) to manage their iptables firewall rules; it features persistence of rules and dynamic port assignments, in case host or container are restarted.
 
 docker-fw expects your firewall to be using the ``*filter FORWARD`` chain with a default policy of REJECT/DROP (or an equivalent rule at bottom); this is default behavior starting from Docker version 1.5.
 
-docker-fw does not work well with Docker daemon ``--restart`` options because docker-fw would not be called automatically on container start. However, you can customize initialization of containers on host boot script via ``/etc/rc.local``, for example to loop through existing containers and initialize their firewall rules using ``docker-fw start``.
+docker-fw does not work with Docker daemon ``--restart`` options because docker-fw would not be called automatically on container start. However, you can customize initialization of containers on host boot script via ``/etc/rc.local``, for example to loop through existing containers and initialize their firewall rules using ``docker-fw start``.
 
 It is also possible to use this utility completely manage your internal docker0 bridge traffic between containers, as it will play nicely along with ``--icc=false`` and ``--iptables=true`` Docker daemon options.
 
@@ -128,6 +128,20 @@ The option --paused allows to start containers in paused status (for example in 
 The option --pull-deps will automatically make dependant (by link relationship) containers part of the selection.
 If a container is already started or paused, its state is not changed.
 By specifying --dry-run containers will be displayed in the order they would be started, but their state will not be changed.
+
+Troubleshooting
+===============
+
+If you see an error like this when running ``docker-fw init``:
+```
+2015/01/24 21:01:20 init: Could not find docker-added rule
+```
+
+You have two issues:
+* you didn't [RTFM](https://en.wikipedia.org/wiki/RTFM)
+* you are using Docker older than version 1.5
+
+You can use an older version of Docker with docker-fw, provided you apply [this PR](https://github.com/docker/docker/pull/7003) on your own.
 
 Internals
 =========
