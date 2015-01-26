@@ -717,8 +717,16 @@ func ListRules(containerIds []string) error {
 			continue
 		}
 
-		for _, r := range collection.Rules {
-			fmt.Printf("%s\n", r.FormatAsFwCommand(container.Name[1:]))
+		for _, rule := range collection.Rules {
+			// apply visual fix for rules that where stored with IDs instead of names
+			if rule.SourceAlias != "" {
+				rule.SourceAlias = ccl.containers[rule.SourceAlias].Name[1:]
+			}
+			if rule.DestinationAlias != "" {
+				rule.DestinationAlias = ccl.containers[rule.DestinationAlias].Name[1:]
+			}
+
+			fmt.Printf("%s\n", rule.FormatAsFwCommand(container.Name[1:]))
 		}
 	}
 
