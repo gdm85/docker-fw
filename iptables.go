@@ -403,6 +403,7 @@ func AddTwoWays(cid string, iptRule *IptablesRule) error {
 		return err
 	}
 
+	// this is necessary because of --icc=false
 	err = AddInternalRule(cid, iptRule)
 	if err != nil {
 		return err

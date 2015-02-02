@@ -76,6 +76,23 @@ These commands can also parse and add multiple rules from a file or stdin (using
 
 When using --from, any other parameter (except --rev-lookup) is disallowed.
 
+Two-ways linking
+----------------
+
+An example of how to apply two-ways linking (assumes ``--icc=false`` on your Docker daemon):
+```
+docker run -d --name=promoted ubuntu sleep 1000000
+docker run -d --publish 1025 --link promoted:promoted --name=endpoint ubuntu sleep 1000000
+
+## enable iptables + hosts via docker-fw
+docker-fw add-two-ways endpoint --source promoted --dport 1025
+
+## test (it's advised to use 2 terminals for these commands)
+docker exec endpoint nc -l 1025 &
+
+echo "hello from promoted container" | docker exec promoted nc endpoint 1025
+```
+
 Save-hostconfig
 ---------------
 
