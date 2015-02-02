@@ -67,6 +67,7 @@ Some rules to use 'add', 'add-two-ways', 'add-internal' and 'add-input':
 'add-two-ways' requires that source is a container and performs two tasks:
 - execute add-internal with the specified rule
 - always make sure that the source container will have a /etc/hosts rule for the source container
+- the internal rules and the custom hosts will be restored when using ``docker-fw start`` for the container
 
 These commands can also parse and add multiple rules from a file or stdin (using '-' as filename):
 

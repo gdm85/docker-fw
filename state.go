@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"github.com/gdm85/go-dockerclient"
 	"io/ioutil"
+	"log"
 	"os"
 	"strings"
-	"log"
 )
 
 func getBackupHostConfigFileName(cid string) string {
@@ -229,6 +229,29 @@ func updateCustomHosts(target, b string) error {
 		if err != nil {
 			return err
 		}
+	}
+
+	return nil
+}
+
+func reapplyCustomHosts(target string) error {
+	container, err := ccl.LookupOnlineContainer(target)
+	if err != nil {
+		return err
+	}
+	ch, err := LoadCustomHosts(container)
+	if err != nil {
+		return err
+	}
+
+	if len(ch) == 0 {
+		return nil
+	}
+
+	// update the live hosts file of target
+	err = updateHosts(container, ch)
+	if err != nil {
+		return err
 	}
 
 	return nil

@@ -97,7 +97,15 @@ func StartContainers(containerIds []string, startPaused, pullDeps, dryRun bool) 
 		return 127, err
 	}
 
-	// always run the 'replay' action at end of actions
+	// restore custom hosts modifications
+	for _, id := range normalizedIds {
+		err = reapplyCustomHosts(id)
+		if err != nil {
+			return 128, err
+		}
+	}
+
+	// at the end, always run the 'replay' action
 	return ReplayRules(normalizedIds, dryRun)
 }
 
