@@ -20,14 +20,18 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 package main
 
 import (
-	"encoding/json"
+	"bytes"
 	"errors"
 	"fmt"
 	"github.com/gdm85/go-dockerclient"
-	"io/ioutil"
-	"os"
 	"sort"
+	"strings"
 )
+
+type ExecResult struct {
+	Stdout, Stderr string
+	ExitCode       int
+}
 
 var Docker *docker.Client
 
@@ -37,10 +41,6 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
-}
-
-func getBackupHostConfigFileName(cid string) string {
-	return fmt.Sprintf("/var/lib/docker/containers/%s/backupHostConfig.json", cid)
 }
 
 func areEquivalentArrays(a, b []string) bool {
@@ -134,106 +134,96 @@ func asGoodAs(orig *docker.HostConfig, current *docker.HostConfig) bool {
 		arePortBindingsEqual(orig.PortBindings, current.PortBindings)
 }
 
-//NOTE: containre must be running for this to work
-func BackupHostConfig(containerIds []string, mergeNetworkSettings, failOnChange bool) error {
-	for _, userCid := range containerIds {
-		container, err := ccl.LookupOnlineContainer(userCid)
-		if err != nil {
-			return err
-		}
-
-		if !container.State.Running {
-			return errors.New(fmt.Sprintf("Container %s does is not running", container.ID))
-		}
-
-		// validate that nothing relevant has changed
-		if failOnChange {
-			origHostConfig, err := fetchSavedHostConfig(container.ID)
-			if err != nil {
-				return err
-			}
-
-			if origHostConfig != nil {
-				// normalize
-				if origHostConfig.RestartPolicy.Name == "" {
-					origHostConfig.RestartPolicy = docker.NeverRestart()
-				}
-
-				// proceed to validate that nothing relevant changed since last execution time
-				//NOTE: this might easily be an insufficient test if new options are added
-
-				if !asGoodAs(origHostConfig, container.HostConfig) {
-					return errors.New(fmt.Sprintf("Container %s has inconsistently changed host configuration", container.ID))
-				}
-			}
-		}
-
-		err = backupHostConfig(container, mergeNetworkSettings)
-		if err != nil {
-			return err
-		}
+func containerExec(cid string, cmd []string) (*ExecResult, error) {
+	config := docker.CreateExecOptions{
+		Container:    cid,
+		AttachStdin:  false,
+		AttachStdout: true,
+		AttachStderr: true,
+		Tty:          false,
+		Cmd:          cmd,
+	}
+	execObj, err := Docker.CreateExec(config)
+	if err != nil {
+		return nil, err
 	}
 
-	return nil
+	//	Docker.SkipServerVersionCheck = true
+	var stdout, stderr bytes.Buffer
+	opts := docker.StartExecOptions{
+		OutputStream: &stdout,
+		ErrorStream:  &stderr,
+		Detach:       false,
+	}
+
+	// start execution & join
+	err = Docker.StartExec(execObj.ID, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// inspect to retrieve exit code
+	inspect, err := Docker.InspectExec(execObj.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ExecResult{
+		ExitCode: inspect.ExitCode,
+		Stdout:   stdout.String(),
+		Stderr:   stderr.String(),
+	}, nil
 }
 
-func backupHostConfig(container *docker.Container, mergeNetworkSettings bool) error {
-	var origPortBindings map[docker.Port][]docker.PortBinding
-	if mergeNetworkSettings {
-		origPortBindings = container.HostConfig.PortBindings
-
-		container.HostConfig.PortBindings = container.NetworkSettings.Ports
-	}
-
-	bytes, err := json.Marshal(container.HostConfig)
-	if mergeNetworkSettings {
-		container.HostConfig.PortBindings = origPortBindings
-	}
+func containerInject(cid, path, content string) error {
+	// first truncate the existing hosts file
+	// 'truncate', like 'cat', are part of coreutils and expected to be found within container
+	result, err := containerExec(cid, []string{"truncate", "--size=0", "/etc/hosts"})
 	if err != nil {
 		return err
 	}
-	err = ioutil.WriteFile(getBackupHostConfigFileName(container.ID), bytes, 0666)
-	return err
-}
+	if result.ExitCode != 0 {
+		return errors.New(fmt.Sprintf("failed to truncate hosts inside container: %s", result.Stderr))
+	}
 
-func fetchSavedHostConfigAsBytes(id string) ([]byte, error) {
-	fileName := getBackupHostConfigFileName(id)
-
-	_, err := os.Stat(fileName)
+	// proceed to append new data
+	config := docker.CreateExecOptions{
+		Container:    cid,
+		AttachStdin:  true,
+		AttachStdout: true,
+		AttachStderr: true,
+		Tty:          false,
+		Cmd:          []string{"sh", "-c", "cat >> " + path},
+	}
+	execObj, err := Docker.CreateExec(config)
 	if err != nil {
-		if !os.IsNotExist(err) {
-			return nil, err
-		}
-
-		// nothing found, and no error either
-		return nil, nil
+		return err
 	}
 
-	// read only when existing
-	bytes, err := ioutil.ReadFile(fileName)
+	//	Docker.SkipServerVersionCheck = true
+	var stdout, stderr bytes.Buffer
+	opts := docker.StartExecOptions{
+		InputStream:  strings.NewReader(content),
+		OutputStream: &stdout,
+		ErrorStream:  &stderr,
+		Detach:       false,
+	}
+
+	// start execution
+	err = Docker.StartExec(execObj.ID, opts)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return bytes, nil
-}
-
-func fetchSavedHostConfig(id string) (*docker.HostConfig, error) {
-	hostConfig := docker.HostConfig{}
-	bytes, err := fetchSavedHostConfigAsBytes(id)
+	// inspect to retrieve exit code
+	inspect, err := Docker.InspectExec(execObj.ID)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	// nothing found
-	if bytes == nil {
-		return nil, nil
+	if inspect.ExitCode != 0 {
+		return errors.New(fmt.Sprintf("failed to cat inside container: %s", stderr.String()))
 	}
 
-	err = json.Unmarshal(bytes, &hostConfig)
-	if err != nil {
-		return nil, err
-	}
-
-	return &hostConfig, nil
+	return nil
 }

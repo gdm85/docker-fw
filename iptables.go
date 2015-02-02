@@ -410,91 +410,6 @@ func AddTwoWays(cid string, iptRule *IptablesRule) error {
 	return nil
 }
 
-func getCustomHostsFileName(c *docker.Container) string {
-	return fmt.Sprintf("/var/lib/docker/containers/%s/extraRules.json", c.ID)
-}
-
-func LoadCustomHosts(container *docker.Container) ([]string, error) {
-	_, err := os.Stat(getCustomHostsFileName(container))
-	if err != nil {
-		if !os.IsNotExist(err) {
-			return nil, err
-		}
-
-		// file does not exist, no problem
-		return []string{}, nil
-	}
-	// read only when existing
-	bytes, err := ioutil.ReadFile(getCustomHostsFileName(container))
-	if err != nil {
-		return nil, err
-	}
-
-	ch := []string{}
-	err = json.Unmarshal(bytes, &ch)
-	if err != nil {
-		return nil, err
-	}
-	return ch, nil
-}
-
-func saveCustomHosts(c *docker.Container, ch []string) error {
-	bytes, err := json.Marshal(&ch)
-	if err != nil {
-		return err
-	}
-	err = ioutil.WriteFile(getCustomHostsFileName(c), bytes, 0666)
-	return err
-}
-
-func updateCustomHosts(target, b string) error {
-	container, err := ccl.LookupOnlineContainer(target)
-	if err != nil {
-		return err
-	}
-	ch, err := LoadCustomHosts(container)
-	if err != nil {
-		return err
-	}
-
-	bContainer, err := ccl.LookupOnlineContainer(b)
-	if err != nil {
-		return err
-	}
-
-	found := false
-	for _, host := range ch {
-		if host == bContainer.Name[1:] {
-			found = true
-			break
-		}
-	}
-
-	if !found {
-		ch = append(ch, bContainer.Name[1:])
-	}
-
-	// in any case, update the live hosts file of target
-	err = updateHosts(container, ch)
-	if err != nil {
-		return err
-	}
-
-	// save only if it was not already there
-	if !found {
-		err = saveCustomHosts(container, ch)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func updateHosts(c *docker.Container, ch []string) error {
-	panic("not yet implemented: hosts update via exec")
-}
-
 // corresponding to a subcommand (add-internal)
 func AddInternalRule(cid string, iptRule *IptablesRule) error {
 	container, err := ccl.LookupOnlineContainer(cid)
@@ -519,34 +434,6 @@ func (c *IptablesRulesCollection) Append(iptRule *ActiveIptablesRule) {
 
 func (c *IptablesRulesCollection) fileName() string {
 	return fmt.Sprintf("/var/lib/docker/containers/%s/extraRules.json", c.cid)
-}
-
-// read existing rules (if any)
-func LoadRules(container *docker.Container) (*IptablesRulesCollection, error) {
-	c := IptablesRulesCollection{cid: container.ID}
-
-	_, err := os.Stat(c.fileName())
-	if err != nil {
-		if !os.IsNotExist(err) {
-			return nil, err
-		}
-
-		// file does not exist, no problem, allow fallback to 'return nil'
-
-	} else {
-		// read only when existing
-		bytes, err := ioutil.ReadFile(c.fileName())
-		if err != nil {
-			return nil, err
-		}
-
-		err = json.Unmarshal(bytes, &c)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return &c, nil
 }
 
 func (c *IptablesRulesCollection) Remove() error {
@@ -603,7 +490,7 @@ func recordRule(container *docker.Container, iptRule *ActiveIptablesRule) error 
 	for _, r := range c.Rules {
 		if r.Format() == iptRule.Format() && r.Aliases() == iptRule.Aliases() {
 			// already tracked, skip
-			fmt.Printf("docker-fw: rule '%s' already tracked", r.Format())
+			fmt.Printf("docker-fw: rule '%s' already tracked\n", r.Format())
 			return nil
 		}
 	}
@@ -625,7 +512,7 @@ func RuleExists(rule string) bool {
 
 func internalAppend(containerId, rule string) error {
 	if RuleExists(rule) {
-		fmt.Printf("iptables(%s): rule '%s' already exists, not appending\n", containerId, rule)
+		fmt.Printf("docker-fw: iptables(%s): rule '%s' already exists, not appending\n", containerId, rule)
 		return nil
 	}
 
@@ -644,7 +531,7 @@ func internalAppend(containerId, rule string) error {
 
 func internalInsert(pos int, rule string) error {
 	if RuleExists(rule) {
-		fmt.Printf("iptables: rule '%s' already exists, not inserting\n", rule)
+		fmt.Printf("docker-fw: iptables: rule '%s' already exists, not inserting\n", rule)
 		return nil
 	}
 
@@ -727,7 +614,7 @@ func ReplayRules(containerIds []string, dryRun bool) (int, error) {
 				// first, (attempt to) remove old rule
 				if dryRun {
 					if RuleExists(oldRule) {
-						fmt.Printf("iptables(%s): would delete rule '%s'\n", container.Name[1:], oldRule)
+						fmt.Printf("docker-fw: iptables(%s): would delete rule '%s'\n", container.Name[1:], oldRule)
 						hasChanges = true
 					}
 				} else {
@@ -743,7 +630,7 @@ func ReplayRules(containerIds []string, dryRun bool) (int, error) {
 				// insert or append, depending on destination chain
 				if r.Chain == DOCKER_CHAIN {
 					if dryRun {
-						fmt.Printf("iptables(%s): would append rule '%s'\n", container.Name, rule)
+						fmt.Printf("docker-fw: iptables(%s): would append rule '%s'\n", container.Name, rule)
 						hasChanges = true
 					} else {
 						err := internalAppend(container.Name, rule)
@@ -753,7 +640,7 @@ func ReplayRules(containerIds []string, dryRun bool) (int, error) {
 					}
 				} else {
 					if dryRun {
-						fmt.Printf("iptables(%s): would insert rule '%s'\n", container.Name, rule)
+						fmt.Printf("docker-fw: iptables(%s): would insert rule '%s'\n", container.Name, rule)
 						hasChanges = true
 					} else {
 						err := internalInsert(r.Position(), rule)
