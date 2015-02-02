@@ -55,15 +55,15 @@ var (
 func NewAction(action string, allowParseNames bool) *Action {
 	var a Action
 	a.CommandSet = getopt.New()
-	a.CommandSet.SetProgram("docker-fw (init|start|allow|add|add-input|add-internal|ls|save-hostconfig|replay|drop) containerId")
-	a.CommandSet.SetParameters("\n\nSyntax for all add actions:\n\tdocker-fw (add|add-input|add-internal) ...")
+	a.CommandSet.SetProgram("docker-fw (init|start|allow|add|add-input|add-two-ways|add-internal|ls|save-hostconfig|replay|drop) containerId")
+	a.CommandSet.SetParameters("\n\nSyntax for all add actions:\n\tdocker-fw (add|add-input|add-two-ways|add-internal) ...")
 	a.Action = action
 
 	// define all command line options
 	a.SourceArg = a.CommandSet.StringVarLong(&a.source, "source", 's', "source-specification*", ".")
 	a.SourcePortArg = a.CommandSet.Uint16VarLong(&a.sourcePort, "sport", 0, "Source port, optional", "port")
 	a.DestArg = a.CommandSet.StringVarLong(&a.dest, "dest", 'd', "destination-specification*", ".")
-	a.DestPortArg = a.CommandSet.Uint16VarLong(&a.destPort, "dport", 0, "Destination port, mandatory only for 'add-input' and 'add-internal' actions", "port")
+	a.DestPortArg = a.CommandSet.Uint16VarLong(&a.destPort, "dport", 0, "Destination port, mandatory only for 'add-input', 'add-two-ways' and 'add-internal' actions", "port")
 	a.ProtoArg = a.CommandSet.EnumVarLong(&a.proto, "protocol", 'p', []string{"tcp", "udp"}, "The protocol of the packet to check")
 	a.FilterArg = a.CommandSet.StringVarLong(&a.filter, "filter", 0, "extra iptables conditions")
 	if allowParseNames {
@@ -92,7 +92,7 @@ func (a *Action) Validate() error {
 	if !a.SourceArg.Seen() {
 		return errors.New("--source is mandatory")
 	}
-	if a.Action == "add-input" || a.Action == "add-internal" {
+	if a.Action == "add-input" || a.Action == "add-internal" || a.Action == "add-two-ways" {
 		if !a.DestPortArg.Seen() {
 			return errors.New("--dport is mandatory")
 		}
@@ -188,6 +188,8 @@ func (a *Action) ExecuteAddAction() error {
 		err = AddInputRule(a.ContainerId, rule)
 	} else if a.Action == "add-internal" {
 		err = AddInternalRule(a.ContainerId, rule)
+	} else if a.Action == "add-two-ways" {
+		err = AddTwoWays(a.ContainerId, rule)
 	} else {
 		// only add* actions are supported when importing from file
 		return errors.New("cannot execute this action: " + a.Action)
@@ -394,7 +396,7 @@ func main() {
 
 		os.Exit(0)
 		return
-	case "add-internal", "add", "add-input":
+	case "add-two-ways", "add-internal", "add", "add-input":
 		if len(os.Args) < 3 {
 			log.Fatalf("%s: no container id specified", cliArgs.Action)
 			os.Exit(1)

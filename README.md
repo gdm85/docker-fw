@@ -46,7 +46,7 @@ It will fail if docker daemon is not running or if rule does not exist.
 Add actions
 -----------
 
-'add' is used to add a firewall specification for a container (any network external to Docker circuit, e.g. 192.168.178.0/24 or a public internet address) and targets the FORWARD chain, while 'add-internal' targets the INPUT chain.
+'add' is used to add a firewall specification for a container (any network external to Docker circuit, e.g. 192.168.178.0/24 or a public internet address) and targets the FORWARD chain, while 'add-internal'/'add-two-ways' target the INPUT chain.
 If a valid container id/name is specified, then its IPv4 will be always aliased by docker-fw. Some special values exist for address specification:
 - `.` to reference the container for which rules are being added
 - `/` to reference the Docker host (usually 172.17.42.1)
@@ -54,15 +54,19 @@ If a valid container id/name is specified, then its IPv4 will be always aliased 
 **NOTE**: referencing the Docker host `/` is mostly intended for the 'add-internal' action; since it is considered a poor practice to create firewall rules to allow traffic that target the docker host
 
 	docker-fw add container-id --source=(1.2.3.4|.|container-id) [--rev-lookup] [--sport=xxxx] [--dest=(1.2.3.4|.|container-id)] [--dport=xxxx] [--protocol=(tcp|udp)] [--filter="-i docker0 -o docker0"]
-	docker add-internal container-id --source=(1.2.3.4|.|container-id|/) [--rev-lookup] [--sport=xxxx] --dest=(1.2.3.4|.|container-id|/) --dport=xxxx [--protocol=(tcp|udp)] [--filter="-i docker0 -o docker0"]
+	docker-fw (add-internal|add-two-ways) container-id --source=(1.2.3.4|.|container-id|/) [--rev-lookup] [--sport=xxxx] --dest=(1.2.3.4|.|container-id|/) --dport=xxxx [--protocol=(tcp|udp)] [--filter="-i docker0 -o docker0"]
 
-Some rules to use 'add', 'add-internal' and 'add-input':
+Some rules to use 'add', 'add-two-ways', 'add-internal' and 'add-input':
 - address specifications (source/destination) can also be in IPv4 subnet notation
 - specifying --dport is mandatory for 'add-internal' action.
 - protocol default is 'tcp'.
 - at least source or destination must be equivalent to '.' (container for which rule is being specified), but cannot be both. If no destination is specified, '.' is assumed.
 - specification of extra iptables filter is optional, and empty by default
 - using --rev-lookup allows to specify a container IPv4 address, that otherwise would be an error (name/id form is preferred)
+
+'add-two-ways' requires that source is a container and performs two tasks:
+- execute add-internal with the specified rule
+- always make sure that the source container will have a /etc/hosts rule for the source container
 
 These commands can also parse and add multiple rules from a file or stdin (using '-' as filename):
 

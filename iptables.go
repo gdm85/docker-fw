@@ -392,6 +392,109 @@ func AddInputRule(cid string, iptRule *IptablesRule) error {
 	return recordRule(container, &addedRule)
 }
 
+// corresponding to action add-two-ways
+func AddTwoWays(cid string, iptRule *IptablesRule) error {
+	// create or update the two-ways hook for source
+	if iptRule.SourceAlias == "" {
+		return errors.New("Source must be a container id/name")
+	}
+	err := updateCustomHosts(iptRule.SourceAlias, cid)
+	if err != nil {
+		return err
+	}
+
+	err = AddInternalRule(cid, iptRule)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func getCustomHostsFileName(c *docker.Container) string {
+	return fmt.Sprintf("/var/lib/docker/containers/%s/extraRules.json", c.ID)
+}
+
+func LoadCustomHosts(container *docker.Container) ([]string, error) {
+	_, err := os.Stat(getCustomHostsFileName(container))
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return nil, err
+		}
+
+		// file does not exist, no problem
+		return []string{}, nil
+	}
+	// read only when existing
+	bytes, err := ioutil.ReadFile(getCustomHostsFileName(container))
+	if err != nil {
+		return nil, err
+	}
+
+	ch := []string{}
+	err = json.Unmarshal(bytes, &ch)
+	if err != nil {
+		return nil, err
+	}
+	return ch, nil
+}
+
+func saveCustomHosts(c *docker.Container, ch []string) error {
+	bytes, err := json.Marshal(&ch)
+	if err != nil {
+		return err
+	}
+	err = ioutil.WriteFile(getCustomHostsFileName(c), bytes, 0666)
+	return err
+}
+
+func updateCustomHosts(target, b string) error {
+	container, err := ccl.LookupOnlineContainer(target)
+	if err != nil {
+		return err
+	}
+	ch, err := LoadCustomHosts(container)
+	if err != nil {
+		return err
+	}
+
+	bContainer, err := ccl.LookupOnlineContainer(b)
+	if err != nil {
+		return err
+	}
+
+	found := false
+	for _, host := range ch {
+		if host == bContainer.Name[1:] {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		ch = append(ch, bContainer.Name[1:])
+	}
+
+	// in any case, update the live hosts file of target
+	err = updateHosts(container, ch)
+	if err != nil {
+		return err
+	}
+
+	// save only if it was not already there
+	if !found {
+		err = saveCustomHosts(container, ch)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func updateHosts(c *docker.Container, ch []string) error {
+	panic("not yet implemented: hosts update via exec")
+}
+
 // corresponding to a subcommand (add-internal)
 func AddInternalRule(cid string, iptRule *IptablesRule) error {
 	container, err := ccl.LookupOnlineContainer(cid)
