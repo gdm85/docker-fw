@@ -257,14 +257,39 @@ func reapplyCustomHosts(target string) error {
 	return nil
 }
 
+func restorePaused(c *docker.Container, paused bool, origErr error) error {
+	if paused {
+		err := Docker.UnpauseContainer(c.ID)
+		if err != nil {
+			return fmt.Errorf("%s\nadditionally, an error while re-pausing container: %s", origErr, err)
+		}
+	}
+	return origErr
+}
+
 func updateHosts(c *docker.Container, ch []string) error {
+	// In order to exec successfully within the container, we must unpause it if it were paused
+	// although nsenter has not such limitation, for some reason it is enforced by Docker,
+	// thus here docker-fw complies by first unpausing the container and then re-pausing it.
+	// The net result is that - whatsoever your experiments tell you - you should never relay on two-ways containers
+	// being reachable during any of your initialization in CMD/ENTRYPOINT commands
+	wasPaused := false
+	if c.State.Paused {
+		err := Docker.UnpauseContainer(c.ID)
+		if err != nil {
+			return err
+		}
+		wasPaused = true
+	}
+
 	result, err := containerExec(c.ID, []string{"cat", "/etc/hosts"})
 	if err != nil {
-		return err
+		return restorePaused(c, wasPaused, err)
 	}
 
 	if result.ExitCode != 0 {
-		return errors.New(fmt.Sprintf("Could not read /etc/hosts in container '%s': %s", c.Name[1:], result.Stderr))
+		err := errors.New(fmt.Sprintf("Could not read /etc/hosts in container '%s': %s", c.Name[1:], result.Stderr))
+		return restorePaused(c, wasPaused, err)
 	}
 
 	// read existing hosts
@@ -287,7 +312,7 @@ func updateHosts(c *docker.Container, ch []string) error {
 		for _, cid := range ch {
 			container, err := ccl.LookupOnlineContainer(cid)
 			if err != nil {
-				return err
+				return restorePaused(c, wasPaused, err)
 			}
 			for _, field := range fields[1:] {
 				if field == container.Name[1:] {
@@ -333,7 +358,7 @@ func updateHosts(c *docker.Container, ch []string) error {
 	for _, host := range ch {
 		container, err := ccl.LookupOnlineContainer(host)
 		if err != nil {
-			return err
+			return restorePaused(c, wasPaused, err)
 		}
 		if !inArray(okContainers, container.Name[1:]) {
 			rewrittenLines = append(rewrittenLines, fmt.Sprintf("%s\t%s", container.NetworkSettings.IPAddress, container.Name[1:]))
@@ -346,9 +371,9 @@ func updateHosts(c *docker.Container, ch []string) error {
 	if hasHostsChanges {
 		err := containerInject(c.ID, "/etc/hosts", strings.Join(rewrittenLines, "\n")+"\n")
 		if err != nil {
-			return err
+			return restorePaused(c, wasPaused, err)
 		}
 	}
 
-	return nil
+	return restorePaused(c, wasPaused, nil)
 }
