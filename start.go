@@ -85,7 +85,7 @@ func startAndSave(container *docker.Container) error {
 		return err
 	}
 
-	// this will enforce container to be online
+	// this will also enforce container to be online
 	err = ccl.RefreshContainer(container.ID, true)
 
 	return err
@@ -241,7 +241,8 @@ func internalStartContainers(containerIds []string, startPaused, pullDeps, dryRu
 
 		if changedState {
 			// always get latest version, since state might have changed
-			container, err = ccl.LookupContainer(node.ID)
+			// this will also enforce container to be online
+			err = ccl.RefreshContainer(container.ID, true)
 			if err != nil {
 				return normalizedIds, err
 			}

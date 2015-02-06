@@ -259,7 +259,7 @@ func reapplyCustomHosts(target string) error {
 
 func restorePaused(c *docker.Container, paused bool, origErr error) error {
 	if paused {
-		err := Docker.UnpauseContainer(c.ID)
+		err := Docker.PauseContainer(c.ID)
 		if err != nil {
 			return fmt.Errorf("%s\nadditionally, an error while re-pausing container: %s", origErr, err)
 		}
