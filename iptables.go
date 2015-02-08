@@ -64,6 +64,7 @@ type IptablesRulesCollection struct {
 
 var matchIpv4 *regexp.Regexp
 var ccl *CachedContainerLookup
+var debugIptables bool = true
 
 func (r *ActiveIptablesRule) Position() int {
 	if r.Chain == "FORWARD" {
@@ -77,7 +78,7 @@ func (r *ActiveIptablesRule) Position() int {
 
 func init() {
 	// test that iptables works
-	exitCode, err := iptablesRun(true, "--version")
+	exitCode, err := iptablesRun("--version", true, true)
 	if err != nil {
 		panic(fmt.Sprintf("iptables: %s", err))
 	}
@@ -98,7 +99,7 @@ func isDockerIPv4(ipv4 string) bool {
 	return strings.HasPrefix(ipv4, "172.")
 }
 
-func iptablesRun(quiet bool, commandLine string) (int, error) {
+func iptablesRun(commandLine string, quietErrors, isCheck bool) (int, error) {
 	var err error
 
 	commandLine = IPTABLES_BINARY + " " + commandLine
@@ -119,6 +120,9 @@ func iptablesRun(quiet bool, commandLine string) (int, error) {
 	}
 	output := ""
 
+	if debugIptables && !isCheck {
+		fmt.Printf("docker-fw: %s\n", commandLine)
+	}
 	err = cmd.Start()
 	if err != nil {
 		return 1, err
@@ -149,7 +153,7 @@ func iptablesRun(quiet bool, commandLine string) (int, error) {
 	}
 
 	// display errors when exit code != 0
-	if !quiet {
+	if !quietErrors {
 		if exitCode != 0 {
 			log.Printf("%s\n%s", commandLine, output)
 		}
@@ -504,7 +508,7 @@ func recordRule(container *docker.Container, iptRule *ActiveIptablesRule) error 
 
 // check if rule exists
 func RuleExists(rule string) bool {
-	exitCode, err := iptablesRun(true, "--wait -C "+rule)
+	exitCode, err := iptablesRun("--wait -C "+rule, true, true)
 	if err != nil {
 		panic(fmt.Sprintf("iptables: %s", err))
 	}
@@ -519,7 +523,7 @@ func internalAppend(containerId, rule string) error {
 
 	parts := strings.SplitN(rule, " ", 2)
 	// now append rule
-	exitCode, err := iptablesRun(false, fmt.Sprintf("--wait -A %s %s", parts[0], parts[1]))
+	exitCode, err := iptablesRun(fmt.Sprintf("--wait -A %s %s", parts[0], parts[1]), false, false)
 	if err != nil {
 		panic(fmt.Sprintf("iptables(%s): %s", containerId, err))
 	}
@@ -538,7 +542,7 @@ func internalInsert(pos int, rule string) error {
 
 	parts := strings.SplitN(rule, " ", 2)
 	// now insert rule
-	exitCode, err := iptablesRun(false, fmt.Sprintf("--wait -I %s %d %s", parts[0], pos, parts[1]))
+	exitCode, err := iptablesRun(fmt.Sprintf("--wait -I %s %d %s", parts[0], pos, parts[1]), false, false)
 	if err != nil {
 		panic(fmt.Sprintf("iptables: %s", err))
 	}
@@ -551,7 +555,7 @@ func internalInsert(pos int, rule string) error {
 
 func internalDelete(rule string, quiet bool) error {
 	// now insert rule
-	exitCode, err := iptablesRun(quiet, "--wait -D "+rule)
+	exitCode, err := iptablesRun("--wait -D "+rule, quiet, false)
 	if err != nil {
 		// unexpected failure while running external command
 		panic(fmt.Sprintf("os.Exec(): %s", err))
