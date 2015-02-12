@@ -105,6 +105,11 @@ func StartContainers(containerIds []string, startPaused, pullDeps, dryRun bool) 
 		}
 	}
 
+	// if no containers, do nothing
+	if len(normalizedIds) == 0 {
+		return 0, nil
+	}
+
 	// at the end, always run the 'replay' action
 	return ReplayRules(normalizedIds, dryRun)
 }
