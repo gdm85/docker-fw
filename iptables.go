@@ -35,7 +35,7 @@ import (
 )
 
 const (
-	IPTABLES_BINARY = "/sbin/iptables"
+	IPTABLES_BINARY = "iptables"
 	DOCKER_HOST     = "172.17.42.1/32"
 	DOCKER_CHAIN    = "DOCKER"
 )
@@ -214,11 +214,11 @@ func NewIptablesRule(cid string, source string, sourcePort uint16, dest string, 
 
 	// enforce a valid flow specification
 	if rule.Source == rule.Destination {
-		return nil, errors.New("Cannot add rule with same source and destination")
+		return nil, errors.New("cannot add rule with same source and destination")
 	}
 
 	if rule.SourceAlias != "." && rule.DestinationAlias != "." {
-		return nil, errors.New("Either source or destination must be the container itself")
+		return nil, errors.New("either source or destination must be the container itself")
 	}
 
 	rule.SourcePort = sourcePort
@@ -263,7 +263,7 @@ func AllowExternal(cid string, whitelist4 []string) error {
 
 			rule := IptablesRule{
 				Source: wIpv4, Destination: containerIpv4, Protocol: port.Type, DestinationPort: uint16(port.PrivatePort),
-				DestinationAlias: cid,
+				DestinationAlias: ".",
 				Filter:           "! -i docker0 -o docker0",
 			}
 
@@ -703,7 +703,7 @@ func ListRules(containerIds []string) error {
 		}
 	}
 
-	// loop through each container and display the ready-to-use add* action
+	// loop through each container and display their ready-to-use add* actions
 	for _, container := range containers {
 		collection, err := LoadRules(container)
 		if err != nil {
@@ -715,22 +715,6 @@ func ListRules(containerIds []string) error {
 		}
 
 		for _, rule := range collection.Rules {
-			// apply visual fix for rules that where stored with IDs instead of names
-			if rule.SourceAlias != "" {
-				rule.SourceAlias, err = unAlias(container, rule.SourceAlias)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "docker-fw ls: container '%s' source: %s\n", container.Name[1:], err)
-					continue
-				}
-			}
-			if rule.DestinationAlias != "" {
-				rule.DestinationAlias, err = unAlias(container, rule.DestinationAlias)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "docker-fw ls: container '%s' destination: %s\n", container.Name[1:], err)
-					continue
-				}
-			}
-
 			fmt.Printf("%s\n", rule.FormatAsFwCommand(container.Name[1:]))
 		}
 	}

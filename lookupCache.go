@@ -61,7 +61,7 @@ func (ccl *CachedContainerLookup) lookupInternal(cid string, mustBeOnline bool) 
 
 	if container, ok := ccl.containers[cid]; !ok {
 		if ccl.loadedAll {
-			return nil, errors.New("container not found in fully preloaded cache: " + cid)
+			return nil, fmt.Errorf("container '%s' not found", cid)
 		}
 
 		err := ccl.fullRefreshContainer(cid, mustBeOnline)
@@ -72,7 +72,7 @@ func (ccl *CachedContainerLookup) lookupInternal(cid string, mustBeOnline bool) 
 		// always perform check if container is online, also when returning a cached result
 		if mustBeOnline {
 			if container.NetworkSettings.IPAddress == "" {
-				return nil, errors.New(fmt.Sprintf("Container %s does not have a valid IPv4 address", container.ID))
+				return nil, fmt.Errorf("container '%s' does not have a valid IPv4 address", container.ID)
 			}
 		}
 	}
@@ -183,18 +183,6 @@ func (ccl *CachedContainerLookup) LookupContainer(cid string) (*docker.Container
 	return ccl.lookupInternal(cid, false)
 }
 
-// returns name of the aliased container
-func unAlias(container *docker.Container, alias string) (string, error) {
-	if alias == "." {
-		return container.Name[1:], nil
-	}
-	aliasedContainer, err := ccl.LookupContainer(alias)
-	if err != nil {
-		return "", err
-	}
-	return aliasedContainer.Name[1:], nil
-}
-
 func (ccl *CachedContainerLookup) FindContainerByNetworkAddress(ipv4 string) (*docker.Container, error) {
 	if !ccl.loadedAll {
 		panic("Cannot lookup by network address if all entries have not been loaded")
@@ -216,14 +204,14 @@ func applySelfReduction(foundContainer *docker.Container, self *docker.Container
 }
 
 // first return value is ipv4
-// second return value is alias
-// as aliases, names are preferred over IDs
+// second return value is alias (names preferred over IDs)
 func (ccl *CachedContainerLookup) ParseAddress(addressOrAlias string, self *docker.Container, parseContainerNames bool) (string, string, error) {
 	switch addressOrAlias {
 	case ".":
 		return self.NetworkSettings.IPAddress + "/32", addressOrAlias, nil
 	case "/":
-		return DOCKER_HOST, addressOrAlias, nil
+	case DOCKER_HOST:
+		return DOCKER_HOST, "/", nil
 	default:
 		// match an IPv4 with optional subnet
 		res := matchIpv4.FindStringSubmatch(addressOrAlias)
