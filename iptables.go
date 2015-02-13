@@ -717,10 +717,18 @@ func ListRules(containerIds []string) error {
 		for _, rule := range collection.Rules {
 			// apply visual fix for rules that where stored with IDs instead of names
 			if rule.SourceAlias != "" {
-				rule.SourceAlias = ccl.containers[rule.SourceAlias].Name[1:]
+				rule.SourceAlias, err = unAlias(container, rule.SourceAlias)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "docker-fw ls: container '%s' source: %s\n", container.Name[1:], err)
+					continue
+				}
 			}
 			if rule.DestinationAlias != "" {
-				rule.DestinationAlias = ccl.containers[rule.DestinationAlias].Name[1:]
+				rule.DestinationAlias, err = unAlias(container, rule.DestinationAlias)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "docker-fw ls: container '%s' destination: %s\n", container.Name[1:], err)
+					continue
+				}
 			}
 
 			fmt.Printf("%s\n", rule.FormatAsFwCommand(container.Name[1:]))

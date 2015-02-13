@@ -183,6 +183,18 @@ func (ccl *CachedContainerLookup) LookupContainer(cid string) (*docker.Container
 	return ccl.lookupInternal(cid, false)
 }
 
+// returns name of the aliased container
+func unAlias(container *docker.Container, alias string) (string, error) {
+	if alias == "." {
+		return container.Name[1:], nil
+	}
+	aliasedContainer, err := ccl.LookupContainer(alias)
+	if err != nil {
+		return "", err
+	}
+	return aliasedContainer.Name[1:], nil
+}
+
 func (ccl *CachedContainerLookup) FindContainerByNetworkAddress(ipv4 string) (*docker.Container, error) {
 	if !ccl.loadedAll {
 		panic("Cannot lookup by network address if all entries have not been loaded")
