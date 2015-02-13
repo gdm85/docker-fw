@@ -1,5 +1,5 @@
 /*
- * docker-fw v0.2.1 - a complementary tool for Docker to manage custom
+ * docker-fw v0.2.2 - a complementary tool for Docker to manage custom
  * 					  firewall rules between/towards Docker containers
  * Copyright (C) 2014-2015 gdm85 - https://github.com/gdm85/docker-fw/
 
@@ -62,9 +62,11 @@ type IptablesRulesCollection struct {
 	Rules []*ActiveIptablesRule
 }
 
-var matchIpv4 *regexp.Regexp
-var ccl *CachedContainerLookup
-var debugIptables bool = true
+var (
+	matchIpv4     *regexp.Regexp
+	ccl           *CachedContainerLookup
+	verboseOutput bool
+)
 
 func (r *ActiveIptablesRule) Position() int {
 	if r.Chain == "FORWARD" {
@@ -120,7 +122,7 @@ func iptablesRun(commandLine string, quietErrors, isCheck bool) (int, error) {
 	}
 	output := ""
 
-	if debugIptables && !isCheck {
+	if verboseOutput && !isCheck {
 		fmt.Printf("docker-fw: %s\n", commandLine)
 	}
 	err = cmd.Start()

@@ -1,5 +1,5 @@
 /*
- * docker-fw v0.2.1 - a complementary tool for Docker to manage custom
+ * docker-fw v0.2.2 - a complementary tool for Docker to manage custom
  * 					  firewall rules between/towards Docker containers
  * Copyright (C) 2014-2015 gdm85 - https://github.com/gdm85/docker-fw/
 
@@ -32,7 +32,7 @@ import (
 )
 
 const (
-	VERSION   = "0.2.1"
+	VERSION   = "0.2.2"
 	ADDR_SPEC = "Can be either an IPv4 address, a subnet, one of the special aliases ('.' = container IPv4, '/' = docker host IPv4) or a container id. If an IPv4 address is specified and no subnet, '/32' will be added. Default is '.'"
 	// directly from Docker
 	validContainerNameChars = `[a-zA-Z0-9][a-zA-Z0-9_.-]`
