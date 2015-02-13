@@ -39,13 +39,14 @@ const (
 )
 
 type Action struct {
-	Action, ContainerId                                                                                         string
-	SourceArg, SourcePortArg, DestArg, DestPortArg, ProtoArg, FilterArg, FromArg, ReverseLookupContainerIPv4Arg getopt.Option
-	CommandSet                                                                                                  *getopt.Set
+	Action, ContainerId                                                                                                     string
+	VerboseArg, SourceArg, SourcePortArg, DestArg, DestPortArg, ProtoArg, FilterArg, FromArg, ReverseLookupContainerIPv4Arg getopt.Option
+	CommandSet                                                                                                              *getopt.Set
 
 	source, dest, proto, filter string
 	reverseLookupContainerIPv4  bool
 	sourcePort, destPort        uint16
+	verbose                     bool
 }
 
 var (
@@ -58,6 +59,8 @@ func NewAction(action string, allowParseNames bool) *Action {
 	a.CommandSet.SetProgram("docker-fw (init|start|allow|add|add-input|add-two-ways|add-internal|ls|save-hostconfig|replay|drop) containerId")
 	a.CommandSet.SetParameters("\n\nSyntax for all add actions:\n\tdocker-fw (add|add-input|add-two-ways|add-internal) ...")
 	a.Action = action
+
+	a.VerboseArg = a.CommandSet.BoolVarLong(&a.verbose, "verbose", 'v', "use more verbose output, prints all iptables operations")
 
 	// define all command line options
 	a.SourceArg = a.CommandSet.StringVarLong(&a.source, "source", 's', "source-specification*", ".")
@@ -212,6 +215,9 @@ func main() {
 
 	// parse first positional argument
 	cliArgs.Action = os.Args[1]
+
+	// set global for verbosity
+	verboseOutput = cliArgs.verbose
 
 	switch cliArgs.Action {
 	case "init":
