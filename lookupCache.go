@@ -212,49 +212,47 @@ func (ccl *CachedContainerLookup) ParseAddress(addressOrAlias string, self *dock
 	case "/":
 	case DOCKER_HOST:
 		return DOCKER_HOST, "/", nil
-	default:
-		// match an IPv4 with optional subnet
-		res := matchIpv4.FindStringSubmatch(addressOrAlias)
-		if len(res) != 0 {
-			ipv4 := addressOrAlias
-			if res[4] == "" {
-				// add default subnet
-				ipv4 += "/32"
+	}
+	// match an IPv4 with optional subnet
+	res := matchIpv4.FindStringSubmatch(addressOrAlias)
+	if len(res) != 0 {
+		ipv4 := addressOrAlias
+		if res[4] == "" {
+			// add default subnet
+			ipv4 += "/32"
+		}
+
+		// disallow specifying IPs in Docker subnet (unless specifically allowed)
+		if isDockerIPv4(ipv4) && strings.HasSuffix(ipv4, "/32") {
+			if !parseContainerNames {
+				return "", "", errors.New("trying to use Docker IPv4, use an alias instead")
 			}
 
-			// disallow specifying IPs in Docker subnet (unless specifically allowed)
-			if isDockerIPv4(ipv4) && strings.HasSuffix(ipv4, "/32") {
-				if !parseContainerNames {
-					return "", "", errors.New("trying to use Docker IPv4, use an alias instead")
-				}
-
-				// load all containers - will use a cache
-				err := ccl.LoadAllContainers()
-				if err != nil {
-					return "", "", err
-				}
-
-				container, err := ccl.FindContainerByNetworkAddress(ipv4[:strings.Index(ipv4, "/")])
-				if err != nil {
-					return "", "", err
-				}
-
-				// return the identified container name
-				return ipv4, applySelfReduction(container, self), nil
-			}
-
-			// an ipv4 notation address, either single IPv4 or a subnet, not from a Docker container
-			return ipv4, "", nil
-		} else {
-			// not an ipv4, try to match to a container name/id
-			container, err := ccl.LookupOnlineContainer(addressOrAlias)
+			// load all containers - will use a cache
+			err := ccl.LoadAllContainers()
 			if err != nil {
 				return "", "", err
 			}
 
-			// resolved container id ipv4 and id itself
-			return container.NetworkSettings.IPAddress + "/32", applySelfReduction(container, self), nil
+			container, err := ccl.FindContainerByNetworkAddress(ipv4[:strings.Index(ipv4, "/")])
+			if err != nil {
+				return "", "", err
+			}
+
+			// return the identified container name
+			return ipv4, applySelfReduction(container, self), nil
 		}
+
+		// an ipv4 notation address, either single IPv4 or a subnet, not from a Docker container
+		return ipv4, "", nil
+	} else {
+		// not an ipv4, try to match to a container name/id
+		container, err := ccl.LookupOnlineContainer(addressOrAlias)
+		if err != nil {
+			return "", "", err
+		}
+
+		// resolved container id ipv4 and id itself
+		return container.NetworkSettings.IPAddress + "/32", applySelfReduction(container, self), nil
 	}
-	panic("unexpected exit point")
 }
