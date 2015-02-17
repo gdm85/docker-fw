@@ -84,7 +84,7 @@ func (ccl *CachedContainerLookup) fullRefreshContainer(id string, mustBeOnline b
 	// pull new inspect data from API
 	container, err := Docker.InspectContainer(id)
 	if err != nil {
-		return err
+		return fmt.Errorf("InspectContainer('%s'): %s", id, err)
 	}
 
 	ccl.containers[container.ID] = container
@@ -210,6 +210,7 @@ func (ccl *CachedContainerLookup) ParseAddress(addressOrAlias string, self *dock
 	case ".":
 		return self.NetworkSettings.IPAddress + "/32", addressOrAlias, nil
 	case "/":
+		fallthrough
 	case DOCKER_HOST:
 		return DOCKER_HOST, "/", nil
 	}
