@@ -35,7 +35,7 @@ func getBackupHostConfigFileName(cid string) string {
 	return fmt.Sprintf("/var/lib/docker/containers/%s/backupHostConfig.json", cid)
 }
 
-//NOTE: containre must be running for this to work
+//NOTE: container must be running in order for this to be working
 func BackupHostConfig(containerIds []string, mergeNetworkSettings, failOnChange bool) error {
 	for _, userCid := range containerIds {
 		container, err := ccl.LookupOnlineContainer(userCid)
@@ -44,7 +44,7 @@ func BackupHostConfig(containerIds []string, mergeNetworkSettings, failOnChange 
 		}
 
 		if !container.State.Running {
-			return errors.New(fmt.Sprintf("Container %s does is not running", container.ID))
+			return errors.New(fmt.Sprintf("Container %s is not running", container.Name[1:]))
 		}
 
 		// validate that nothing relevant has changed
@@ -61,10 +61,9 @@ func BackupHostConfig(containerIds []string, mergeNetworkSettings, failOnChange 
 				}
 
 				// proceed to validate that nothing relevant changed since last execution time
-				//NOTE: this might easily be an insufficient test if new options are added
-
+				//NOTE: this might easily be an insufficient test when new options are added upstream
 				if !asGoodAs(origHostConfig, container.HostConfig) {
-					return errors.New(fmt.Sprintf("Container %s has inconsistently changed host configuration", container.ID))
+					return errors.New(fmt.Sprintf("Container %s has inconsistently changed host configuration", container.Name[1:]))
 				}
 			}
 		}
