@@ -151,6 +151,14 @@ The option --pull-deps will automatically make dependant (by link relationship) 
 If a container is already started or paused, its state is not changed.
 By specifying --dry-run containers will be displayed in the order they would be started, but their state will not be changed.
 
+Known issues
+============
+
+* Has some hardcoded features/settings inherited from Docker defaults (e.g. 172.x.x.x subnet)
+* Not thoroughly tested, and no unit tests coverage
+
+As always, patches welcome!
+
 Troubleshooting
 ===============
 
