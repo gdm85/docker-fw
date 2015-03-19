@@ -456,8 +456,8 @@ func main() {
 	} else {
 		file, err := os.Open(from)
 		if err == nil {
-			defer file.Close()
 			err = runCommandsFromScanner(bufio.NewScanner(file), cliArgs.Action)
+			file.Close()
 		}
 	}
 
