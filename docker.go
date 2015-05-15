@@ -23,7 +23,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/gdm85/go-dockerclient"
+	"github.com/fsouza/go-dockerclient"
 	"sort"
 	"strings"
 )
