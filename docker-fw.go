@@ -1,5 +1,5 @@
 /*
- * docker-fw v0.2.2 - a complementary tool for Docker to manage custom
+ * docker-fw v0.2.3 - a complementary tool for Docker to manage custom
  * 					  firewall rules between/towards Docker containers
  * Copyright (C) 2014-2015 gdm85 - https://github.com/gdm85/docker-fw/
 
@@ -32,7 +32,7 @@ import (
 )
 
 const (
-	VERSION   = "0.2.2"
+	version   = "0.2.3"
 	ADDR_SPEC = "Can be either an IPv4 address, a subnet, one of the special aliases ('.' = container IPv4, '/' = docker host IPv4) or a container id. If an IPv4 address is specified and no subnet, '/32' will be added. Default is '.'"
 	// directly from Docker
 	validContainerNameChars = `[a-zA-Z0-9][a-zA-Z0-9_.-]`
@@ -158,7 +158,7 @@ func (a *Action) Usage() {
 	fmt.Printf(`docker-fw version %s, Copyright (C) gdm85 https://github.com/gdm85/docker-fw/
 docker-fw comes with ABSOLUTELY NO WARRANTY; for details see LICENSE
 This is free software, and you are welcome to redistribute it
-under certain conditions`, VERSION)
+under certain conditions`, version)
 	a.CommandSet.PrintUsage(os.Stdout)
 	fmt.Printf("\n* = %s\n", ADDR_SPEC)
 	fmt.Printf("\nSyntax for 'allow' action:\n\tdocker-fw allow address1 [address2] [address3] [...] [addressN]\nA list of IPv4 addresses is accepted\n\n")
