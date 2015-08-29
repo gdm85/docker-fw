@@ -22,7 +22,7 @@ package main
 
 import (
 	"bufio"
-	"code.google.com/p/getopt"
+	"github.com/pborman/getopt"
 	"errors"
 	"fmt"
 	"log"
