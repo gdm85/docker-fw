@@ -5,7 +5,7 @@
 
 export GOPATH=~/goroot
 go get "github.com/fsouza/go-dockerclient" && \
-go get "code.google.com/p/getopt" || exit $?
+go get "https://github.com/pborman/getopt" || exit $?
 
 ## build without debug information
 go build -ldflags "-w -s"
