@@ -32,6 +32,11 @@ License
 
 docker-fw is licensed under GNU GPL version 2, see [LICENSE](LICENSE).
 
+Building
+========
+
+Running the ``make`` command should suffice. Make sure you have set your ``GOPATH`` correctly.
+
 Actions
 ========
 
@@ -168,15 +173,13 @@ If you see an error like this when running ``docker-fw init``:
 ```
 
 You have two issues:
-* you didn't [RTFM](https://en.wikipedia.org/wiki/RTFM)
-* you are using Docker older than version 1.5
-
-You can use an older version of Docker with docker-fw, provided you apply [this PR](https://github.com/docker/docker/pull/7003) on your own.
+* you didn't [RTFM](https://en.wikipedia.org/wiki/RTFM) :)
+* you are using Docker older than version 1.5 (it didn't have [this PR](https://github.com/docker/docker/pull/7003) merged in its codebase)
 
 Internals
 =========
 
-docker-fw uses [Docker API](https://docs.docker.com/reference/api/docker_remote_api/) through [go-dockerclient](https://github.com/fsouza/go-dockerclient), and command-line based iptables access (I know, [libiptc](http://tldp.org/HOWTO/Querying-libiptc-HOWTO/) would be best).
+docker-fw uses [Docker API](https://docs.docker.com/reference/api/docker_remote_api/) through [go-dockerclient](https://github.com/fsouza/go-dockerclient), and command-line based iptables access; [libiptc](http://tldp.org/HOWTO/Querying-libiptc-HOWTO/) is not being used because its API is not published (and it would be a tad too complex, see also [go-libiptc](https://github.com/gdm85/go-libiptc)(.
 
 Container information is retrieved via API when needed and cached for the duration of the execution of docker-fw.
 Any id/name valid for the Docker API can be used with docker-fw.
