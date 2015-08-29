@@ -44,7 +44,7 @@ func init() {
 }
 
 func areEquivalentArrays(a, b []string) bool {
-	if a == nil && a == nil {
+	if a == nil && b == nil {
 		return true
 	}
 
