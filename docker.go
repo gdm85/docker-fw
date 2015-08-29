@@ -130,7 +130,6 @@ func asGoodAs(orig *docker.HostConfig, current *docker.HostConfig) bool {
 		orig.PublishAllPorts == current.PublishAllPorts &&
 		orig.RestartPolicy.Name == current.RestartPolicy.Name &&
 		orig.Privileged == current.Privileged &&
-		orig.PublishAllPorts == current.PublishAllPorts &&
 		arePortBindingsEqual(orig.PortBindings, current.PortBindings)
 }
 
