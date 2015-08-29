@@ -179,7 +179,7 @@ You have two issues:
 Internals
 =========
 
-docker-fw uses [Docker API](https://docs.docker.com/reference/api/docker_remote_api/) through [go-dockerclient](https://github.com/fsouza/go-dockerclient), and command-line based iptables access; [libiptc](http://tldp.org/HOWTO/Querying-libiptc-HOWTO/) is not being used because its API is not published (and it would be a tad too complex, see also [go-libiptc](https://github.com/gdm85/go-libiptc)(.
+docker-fw uses [Docker API](https://docs.docker.com/reference/api/docker_remote_api/) through [go-dockerclient](https://github.com/fsouza/go-dockerclient), and command-line based iptables access; [libiptc](http://tldp.org/HOWTO/Querying-libiptc-HOWTO/) is not being used because its API is not published (and it would be a tad too complex, see also [go-libiptc](https://github.com/gdm85/go-libiptc)).
 
 Container information is retrieved via API when needed and cached for the duration of the execution of docker-fw.
 Any id/name valid for the Docker API can be used with docker-fw.
