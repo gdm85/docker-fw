@@ -156,13 +156,29 @@ The option --pull-deps will automatically make dependant (by link relationship) 
 If a container is already started or paused, its state is not changed.
 By specifying --dry-run containers will be displayed in the order they would be started, but their state will not be changed.
 
+### Dependencies
+Please note that Docker currently (1.8) lacks a correct dependency [DAG](https://en.wikipedia.org/wiki/Directed_acyclic_graph) when starting containers, thus it does not start them in correct order (unless you use ``--restart=true`` has a hack); unfortunately, nothing is mentioned in [documentation there](https://docs.docker.com/articles/host_integration/) regarding this issue, which is solved as explained above by docker-fw start action (even if you don't use any of the other docker-fw features).
+
+See also:
+* https://github.com/docker/docker/issues/8821
+* https://github.com/docker/docker/issues/11777
+
+Internals
+=========
+
+docker-fw uses [Docker API](https://docs.docker.com/reference/api/docker_remote_api/) through [go-dockerclient](https://github.com/fsouza/go-dockerclient), and command-line based iptables access; [libiptc](http://tldp.org/HOWTO/Querying-libiptc-HOWTO/) is not being used because its API is not published (and it would be a tad too complex, see also [go-libiptc](https://github.com/gdm85/go-libiptc)).
+
+Container information is retrieved via API when needed and cached for the duration of the execution of docker-fw.
+Any id/name valid for the Docker API can be used with docker-fw.
+
 Known issues
 ============
 
 * Has some hardcoded features/settings inherited from Docker defaults (e.g. 172.x.x.x subnet)
 * Not thoroughly tested, and no unit tests coverage
+* Stores its ``.json`` descriptors in Docker's own containers metadata directory
 
-As always, patches welcome!
+All of the above can be addressed with some effort, and probably will (in due time); as always, patches welcome!
 
 Troubleshooting
 ===============
@@ -175,11 +191,3 @@ If you see an error like this when running ``docker-fw init``:
 You have two issues:
 * you didn't [RTFM](https://en.wikipedia.org/wiki/RTFM) :)
 * you are using Docker older than version 1.5 (it didn't have [this PR](https://github.com/docker/docker/pull/7003) merged in its codebase)
-
-Internals
-=========
-
-docker-fw uses [Docker API](https://docs.docker.com/reference/api/docker_remote_api/) through [go-dockerclient](https://github.com/fsouza/go-dockerclient), and command-line based iptables access; [libiptc](http://tldp.org/HOWTO/Querying-libiptc-HOWTO/) is not being used because its API is not published (and it would be a tad too complex, see also [go-libiptc](https://github.com/gdm85/go-libiptc)).
-
-Container information is retrieved via API when needed and cached for the duration of the execution of docker-fw.
-Any id/name valid for the Docker API can be used with docker-fw.
