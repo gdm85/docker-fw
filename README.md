@@ -63,11 +63,11 @@ If a valid container id/name is specified, then its IPv4 will be always aliased 
 
 Some rules to use 'add', 'add-two-ways', 'add-internal' and 'add-input':
 - address specifications (source/destination) can also be in IPv4 subnet notation
-- specifying --dport is mandatory for 'add-internal' action.
+- specifying ``--dport`` is mandatory for 'add-internal' action.
 - protocol default is 'tcp'.
 - at least source or destination must be equivalent to '.' (container for which rule is being specified), but cannot be both. If no destination is specified, '.' is assumed.
 - specification of extra iptables filter is optional, and empty by default
-- using --rev-lookup allows to specify a container IPv4 address, that otherwise would be an error (name/id form is preferred)
+- using ``--rev-lookup`` allows to specify a container IPv4 address, that otherwise would be an error (name/id form is preferred)
 
 'add-two-ways' requires that source is a container and performs two tasks:
 - execute add-internal with the specified rule
@@ -80,7 +80,7 @@ These commands can also parse and add multiple rules from a file or stdin (using
 	docker-fw add-internal --from=(filename|-)
 	docker-fw add-input --from=(filename|-)
 
-When using --from, any other parameter (except --rev-lookup) is disallowed.
+When using ``--from``, any other parameter (except ``--rev-lookup``) is disallowed.
 
 Two-ways linking
 ----------------
@@ -148,13 +148,13 @@ Start
 
 It does the following:
  - sort input list of containers second their dependencies
- - start each of them sequentially (paused if --paused is specified)
+ - start each of them sequentially (paused when ``--paused`` is specified)
  - execute the equivalent of 'replay' action for each container as it is started
 
-The option --paused allows to start containers in paused status (for example in case user doesn't want to allow any activity until all firewall restore operations are completed).
-The option --pull-deps will automatically make dependant (by link relationship) containers part of the selection.
+The option ``--paused`` allows to start containers in paused status (for example in case user doesn't want to allow any activity until all firewall restore operations are completed).
+The option ``--pull-deps`` will automatically make dependant (by link relationship) containers part of the selection.
 If a container is already started or paused, its state is not changed.
-By specifying --dry-run containers will be displayed in the order they would be started, but their state will not be changed.
+By specifying ``--dry-run`` containers will be displayed in the order they would be started, but their state will not be changed.
 
 ### Dependencies
 Please note that Docker currently (1.8) lacks a correct dependency [DAG](https://en.wikipedia.org/wiki/Directed_acyclic_graph) when starting containers, thus it does not start them in correct order (unless you use ``--restart=true`` has a hack); unfortunately, nothing is mentioned in [documentation there](https://docs.docker.com/articles/host_integration/) regarding this issue, which is solved as explained above by docker-fw start action (even if you don't use any of the other docker-fw features).
