@@ -1,15 +1,18 @@
+bin/docker-fw:
+	mkdir -p bin .gopath
+	if [ ! -L .gopath/src ]; then ln -s "$(CURDIR)/vendor" .gopath/src; fi
+	cd src && GOBIN="$(CURDIR)/bin/" GOPATH="$(CURDIR)/.gopath" go install && mv ../bin/src ../bin/docker-fw
 
-.DEFAULT_GOAL := all
+all: bin/docker-fw errcheck test
 
-.PHONY := all deps
+errcheck:
+	mkdir -p bin .gopath
+	if [ ! -L .gopath/src ]; then ln -s "$(CURDIR)/vendor" .gopath/src; fi
+	cd src && GOPATH="$(CURDIR)/.gopath" errcheck
 
-all: deps bin/docker-fw
+test:
+	mkdir -p bin .gopath
+	if [ ! -L .gopath/src ]; then ln -s "$(CURDIR)/vendor" .gopath/src; fi
+	cd src && GOPATH="$(CURDIR)/.gopath" go test -v
 
-deps:
-	go get "github.com/fsouza/go-dockerclient"
-	go get "github.com/pborman/getopt"
-
-## build without debug information
-bin/docker-fw: *.go
-	mkdir -p bin
-	GOBIN=bin go install -ldflags "-w -s"
+.PHONY: all deps test errcheck bin/docker-fw

@@ -1,7 +1,7 @@
 /*
- * docker-fw v0.2.3 - a complementary tool for Docker to manage custom
+ * docker-fw v0.2.4 - a complementary tool for Docker to manage custom
  * 					  firewall rules between/towards Docker containers
- * Copyright (C) 2014-2015 gdm85 - https://github.com/gdm85/docker-fw/
+ * Copyright (C) 2014~2016 gdm85 - https://github.com/gdm85/docker-fw/
 
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License
@@ -22,24 +22,25 @@ package main
 
 import (
 	"bufio"
-	"github.com/pborman/getopt"
 	"errors"
 	"fmt"
 	"log"
 	"os"
 	"regexp"
 	"strings"
+
+	"github.com/pborman/getopt"
 )
 
 const (
-	version   = "0.2.3"
+	version   = "0.2.4"
 	ADDR_SPEC = "Can be either an IPv4 address, a subnet, one of the special aliases ('.' = container IPv4, '/' = docker host IPv4) or a container id. If an IPv4 address is specified and no subnet, '/32' will be added. Default is '.'"
 	// directly from Docker
 	validContainerNameChars = `[a-zA-Z0-9][a-zA-Z0-9_.-]`
 )
 
 type Action struct {
-	Action, ContainerId                                                                                                     string
+	ContainerId                                                                                                             string
 	VerboseArg, SourceArg, SourcePortArg, DestArg, DestPortArg, ProtoArg, FilterArg, FromArg, ReverseLookupContainerIPv4Arg getopt.Option
 	CommandSet                                                                                                              *getopt.Set
 
@@ -53,12 +54,11 @@ var (
 	containerIdMatch = regexp.MustCompile(`^/?` + validContainerNameChars + `+$`)
 )
 
-func NewAction(action string, allowParseNames bool) *Action {
+func NewAction(allowParseNames bool) *Action {
 	var a Action
 	a.CommandSet = getopt.New()
 	a.CommandSet.SetProgram("docker-fw (init|start|allow|add|add-input|add-two-ways|add-internal|ls|save-hostconfig|replay|drop) containerId")
 	a.CommandSet.SetParameters("\n\nSyntax for all add actions:\n\tdocker-fw (add|add-input|add-two-ways|add-internal) ...")
-	a.Action = action
 
 	a.VerboseArg = a.CommandSet.BoolVarLong(&a.verbose, "verbose", 'v', "use more verbose output, prints all iptables operations")
 
@@ -88,14 +88,14 @@ func (a *Action) CreateRule() (*IptablesRule, error) {
 	return NewIptablesRule(a.ContainerId, a.source, a.sourcePort, a.dest, a.destPort, a.proto, a.filter, a.reverseLookupContainerIPv4)
 }
 
-func (a *Action) Validate() error {
+func (a *Action) Validate(action string) error {
 	// make source argument mandatory for better readability
 	// although it could safely default to '.' (due to the check that src != dest),
 	// it is better to have it explicit for readability
 	if !a.SourceArg.Seen() {
 		return errors.New("--source is mandatory")
 	}
-	if a.Action == "add-input" || a.Action == "add-internal" || a.Action == "add-two-ways" {
+	if action == "add-input" || action == "add-internal" || action == "add-two-ways" {
 		if !a.DestPortArg.Seen() {
 			return errors.New("--dport is mandatory")
 		}
@@ -129,17 +129,17 @@ func runCommandsFromScanner(scanner *bufio.Scanner, action string) error {
 
 		// create a new 'commandLine' for each input line,
 		// but always use same action for all lines
-		commandLine := NewAction(action, false)
+		commandLine := NewAction(false)
 		// set executable name
 		newArgs := []string{os.Args[0]}
 		newArgs = append(newArgs, strings.Split(scanner.Text(), " ")...)
 		if err := commandLine.Parse(newArgs); err != nil {
-			return errors.New(fmt.Sprintf("%s: error at line %d: %s", commandLine.Action, lineNo, err))
+			return errors.New(fmt.Sprintf("%s: error at line %d: %s", action, lineNo, err))
 		}
 
-		err := commandLine.ExecuteAddAction()
+		err := commandLine.ExecuteAddAction(action)
 		if err != nil {
-			return errors.New(fmt.Sprintf("[file] %s: %s", commandLine.Action, err))
+			return errors.New(fmt.Sprintf("[file] %s: %s", action, err))
 		}
 	}
 
@@ -170,8 +170,8 @@ under certain conditions`, version)
 	fmt.Printf("A list of container IDs/names is accepted; option '--paused' allows to start containers in paused status, option '--pull-deps' allows to pull dependencies in selection, option --dry-run shows container names in the order they would be started without changing their state\n")
 }
 
-func (a *Action) ExecuteAddAction() error {
-	err := a.Validate()
+func (a *Action) ExecuteAddAction(action string) error {
+	err := a.Validate(action)
 	if err != nil {
 		return err
 	}
@@ -181,29 +181,31 @@ func (a *Action) ExecuteAddAction() error {
 		return err
 	}
 
-	if a.Action == "add" {
+	if action == "add" {
 		if isDockerIPv4(rule.Source) && isDockerIPv4(rule.Destination) {
 			return errors.New("Trying to add an external firewall rule for internal Docker traffic")
 		}
 
 		err = AddFirewallRule(a.ContainerId, rule)
-	} else if a.Action == "add-input" {
+	} else if action == "add-input" {
 		err = AddInputRule(a.ContainerId, rule)
-	} else if a.Action == "add-internal" {
+	} else if action == "add-internal" {
 		err = AddInternalRule(a.ContainerId, rule)
-	} else if a.Action == "add-two-ways" {
+	} else if action == "add-two-ways" {
 		err = AddTwoWays(a.ContainerId, rule)
 	} else {
 		// only add* actions are supported when importing from file
-		return errors.New("cannot execute this action: " + a.Action)
+		return errors.New("cannot execute this action: " + action)
 	}
 	return err
 }
 
+var verboseOutput bool
+
 func main() {
 	// all possible command line arguments
 	var from string
-	cliArgs := NewAction("parsing", true)
+	cliArgs := NewAction(true)
 	fromArg := cliArgs.CommandSet.StringVarLong(&from, "from", 0, "", "file|-")
 
 	// if no arguments specified, show help and exit with failure
@@ -213,23 +215,27 @@ func main() {
 		return
 	}
 
-	// parse first positional argument
-	cliArgs.Action = os.Args[1]
-
-	// set global for verbosity
-	verboseOutput = cliArgs.verbose
-
-	switch cliArgs.Action {
+	action := os.Args[1]
+	switch action {
 	case "init":
-		if len(os.Args) != 2 {
-			log.Fatal("init action takes no command line arguments")
+		if len(os.Args) == 3 {
+			if os.Args[2] == "--verbose" {
+				verboseOutput = true
+			} else {
+				log.Fatal("init action takes no command line arguments (except --verbose)")
+				os.Exit(1)
+				return
+			}
+		}
+		if len(os.Args) > 3 {
+			log.Fatal("init action takes no command line arguments (except --verbose)")
 			os.Exit(1)
 			return
 		}
 
 		err := InitializeFirewall()
 		if err != nil {
-			log.Fatalf("%s: %s", cliArgs.Action, err)
+			log.Fatalf("%s: %s", action, err)
 			return
 		}
 
@@ -238,27 +244,27 @@ func main() {
 		return
 	case "allow":
 		if len(os.Args) < 3 {
-			log.Fatalf("%s: no container id specified", cliArgs.Action)
+			log.Fatalf("%s: no container id specified", action)
 			os.Exit(1)
 			return
 		}
 		if len(os.Args) < 4 {
-			log.Fatalf("%s: no whitelist addresses specified", cliArgs.Action)
+			log.Fatalf("%s: no whitelist addresses specified", action)
 			os.Exit(1)
 			return
 		}
 		// pick container id
-		cliArgs.ContainerId = os.Args[2]
+		containerId := os.Args[2]
 
-		if !containerIdMatch.MatchString(cliArgs.ContainerId) {
-			log.Fatalf("not a valid container id: %s", cliArgs.ContainerId)
+		if !containerIdMatch.MatchString(containerId) {
+			log.Fatalf("not a valid container id: %s", containerId)
 			return
 		}
 
-		err := AllowExternal(cliArgs.ContainerId, os.Args[3:])
+		err := AllowExternal(containerId, os.Args[3:])
 		// parse error
 		if err != nil {
-			log.Printf("%s: %s", cliArgs.Action, err)
+			log.Printf("%s: %s", action, err)
 			os.Exit(2)
 			return
 		}
@@ -266,7 +272,7 @@ func main() {
 		return
 	case "start":
 		if len(os.Args) < 3 {
-			log.Fatalf("%s: no container ids specified", cliArgs.Action)
+			log.Fatalf("%s: no container ids specified", action)
 			os.Exit(1)
 			return
 		}
@@ -288,7 +294,7 @@ func main() {
 					pullDeps = true
 					break
 				default:
-					log.Fatalf("%s: unknown option: %s", cliArgs.Action, arg)
+					log.Fatalf("%s: unknown option: %s", action, arg)
 					return
 				}
 
@@ -306,13 +312,13 @@ func main() {
 		exitCode, err := StartContainers(containerIds, paused, pullDeps, dryRun)
 		// parse error
 		if err != nil {
-			log.Printf("%s: %s", cliArgs.Action, err)
+			log.Printf("%s: %s", action, err)
 		}
 		os.Exit(exitCode)
 		return
 	case "replay":
 		if len(os.Args) < 3 {
-			log.Fatalf("%s: insufficient command line arguments specified", cliArgs.Action)
+			log.Fatalf("%s: insufficient command line arguments specified", action)
 			os.Exit(1)
 			return
 		}
@@ -335,14 +341,14 @@ func main() {
 		}
 
 		if len(containerIds) == 0 {
-			log.Fatalf("%s: no containers specified", cliArgs.Action)
+			log.Fatalf("%s: no containers specified", action)
 			os.Exit(1)
 			return
 		}
 
 		exitCode, err := ReplayRules(containerIds, dryRun)
 		if err != nil {
-			log.Printf("%s: %s", cliArgs.Action, err)
+			log.Printf("%s: %s", action, err)
 			os.Exit(exitCode)
 			return
 		}
@@ -362,7 +368,7 @@ func main() {
 
 		err := ListRules(containerIds)
 		if err != nil {
-			log.Printf("%s: %s", cliArgs.Action, err)
+			log.Printf("%s: %s", action, err)
 			os.Exit(2)
 			return
 		}
@@ -371,7 +377,7 @@ func main() {
 		return
 	case "drop", "save-hostconfig":
 		if len(os.Args) < 3 {
-			log.Fatalf("%s: no container ids specified", cliArgs.Action)
+			log.Fatalf("%s: no container ids specified", action)
 			os.Exit(1)
 			return
 		}
@@ -386,16 +392,16 @@ func main() {
 		}
 
 		var err error
-		switch cliArgs.Action {
+		switch action {
 		case "drop":
 			err = DropRules(containerIds)
 		case "save-hostconfig":
 			err = BackupHostConfig(containerIds, true, false)
 		default:
-			panic("not yet implemented action: " + cliArgs.Action)
+			panic("not yet implemented action: " + action)
 		}
 		if err != nil {
-			log.Printf("%s: %s", cliArgs.Action, err)
+			log.Printf("%s: %s", action, err)
 			os.Exit(2)
 			return
 		}
@@ -404,21 +410,22 @@ func main() {
 		return
 	case "add-two-ways", "add-internal", "add", "add-input":
 		if len(os.Args) < 3 {
-			log.Fatalf("%s: no container id specified", cliArgs.Action)
+			log.Fatalf("%s: no container id specified", action)
 			os.Exit(1)
 			return
 		}
 
 		// pick container id
-		cliArgs.ContainerId = os.Args[2]
+		containerId := os.Args[2]
+		cliArgs.ContainerId = containerId
 
-		if !containerIdMatch.MatchString(cliArgs.ContainerId) {
-			log.Fatalf("not a valid container id: %s", cliArgs.ContainerId)
+		if !containerIdMatch.MatchString(containerId) {
+			log.Fatalf("not a valid container id: %s", containerId)
 			return
 		}
 		break
 	default:
-		log.Fatalf("Unknown action: %s", cliArgs.Action)
+		log.Fatalf("Unknown action: %s", action)
 		return
 	}
 
@@ -434,9 +441,9 @@ func main() {
 
 	// if a source for a list of actions is not specified, take a shortcut to direct action processing
 	if !fromArg.Seen() {
-		err := cliArgs.ExecuteAddAction()
+		err := cliArgs.ExecuteAddAction(action)
 		if err != nil {
-			log.Fatalf("%s: %s", cliArgs.Action, err)
+			log.Fatalf("%s: %s", action, err)
 			return
 		}
 
@@ -452,12 +459,15 @@ func main() {
 	// read all commands line by line from stdin
 	var err error
 	if from == "-" {
-		err = runCommandsFromScanner(bufio.NewScanner(os.Stdin), cliArgs.Action)
+		err = runCommandsFromScanner(bufio.NewScanner(os.Stdin), action)
 	} else {
 		file, err := os.Open(from)
 		if err == nil {
-			err = runCommandsFromScanner(bufio.NewScanner(file), cliArgs.Action)
-			file.Close()
+			err = runCommandsFromScanner(bufio.NewScanner(file), action)
+			if err != nil {
+				log.Fatal(err)
+			}
+			err = file.Close()
 		}
 	}
 

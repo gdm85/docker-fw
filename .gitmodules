@@ -1,0 +1,6 @@
+[submodule "vendor/github.com/fsouza/go-dockerclient"]
+	path = vendor/github.com/fsouza/go-dockerclient
+	url = https://github.com/fsouza/go-dockerclient
+[submodule "vendor/github.com/pborman/getopt"]
+	path = vendor/github.com/pborman/getopt
+	url = https://github.com/pborman/getopt

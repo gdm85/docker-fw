@@ -1,7 +1,7 @@
 /*
- * docker-fw v0.2.3 - a complementary tool for Docker to manage custom
+ * docker-fw v0.2.4 - a complementary tool for Docker to manage custom
  * 					  firewall rules between/towards Docker containers
- * Copyright (C) 2014-2015 gdm85 - https://github.com/gdm85/docker-fw/
+ * Copyright (C) 2014~2016 gdm85 - https://github.com/gdm85/docker-fw/
 
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License
@@ -24,14 +24,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/fsouza/go-dockerclient"
 	"io/ioutil"
-	"log"
 	"os"
 	"os/exec"
 	"regexp"
 	"strings"
 	"syscall"
+
+	"github.com/fsouza/go-dockerclient"
 )
 
 const (
@@ -63,9 +63,8 @@ type IptablesRulesCollection struct {
 }
 
 var (
-	matchIpv4     *regexp.Regexp
-	ccl           *CachedContainerLookup
-	verboseOutput bool
+	matchIpv4 *regexp.Regexp
+	ccl       *CachedContainerLookup
 )
 
 func (r *ActiveIptablesRule) Position() int {
@@ -80,11 +79,13 @@ func (r *ActiveIptablesRule) Position() int {
 
 func init() {
 	// test that iptables works
-	exitCode, err := iptablesRun("--version", true, true)
+	exitCode, stdo, stde, err := iptablesRun("--version", true)
 	if err != nil {
 		panic(fmt.Sprintf("iptables: %s", err))
 	}
 	if exitCode != 0 {
+		fmt.Fprintln(os.Stdout, stdo)
+		fmt.Fprintln(os.Stderr, stde)
 		panic("iptables: not available")
 	}
 
@@ -101,7 +102,7 @@ func isDockerIPv4(ipv4 string) bool {
 	return strings.HasPrefix(ipv4, "172.")
 }
 
-func iptablesRun(commandLine string, quietErrors, isCheck bool) (int, error) {
+func iptablesRun(commandLine string, isCheck bool) (int, string, string, error) {
 	var err error
 
 	commandLine = IPTABLES_BINARY + " " + commandLine
@@ -109,37 +110,40 @@ func iptablesRun(commandLine string, quietErrors, isCheck bool) (int, error) {
 	cmd.Env = os.Environ()
 	cmd.Dir, err = os.Getwd()
 	if err != nil {
-		return 1, err
+		return 1, "","",err
 	}
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return 1, err
+		return 1, "","",err
 	}
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
-		return 1, err
+		return 1, "","",err
 	}
-	output := ""
 
-	if verboseOutput && !isCheck {
-		fmt.Printf("docker-fw: %s\n", commandLine)
+	if verboseOutput {
+		if isCheck {
+			fmt.Printf("docker-fw CHECK: %s\n", commandLine)
+		} else {
+			fmt.Printf("docker-fw: %s\n", commandLine)
+		}
 	}
 	err = cmd.Start()
 	if err != nil {
-		return 1, err
+		return 1, "","",err
 	}
 
 	var bytes []byte
 	if bytes, err = ioutil.ReadAll(stdout); err != nil {
-		return 1, err
+		return 1, "","",err
 	}
-	output += string(bytes)
+	stdo := string(bytes)
 
 	if bytes, err = ioutil.ReadAll(stderr); err != nil {
-		return 1, err
+		return 1, "","",err
 	}
-	output += string(bytes)
+	stde := string(bytes)
 
 	var exitCode int
 	if err := cmd.Wait(); err != nil {
@@ -154,14 +158,7 @@ func iptablesRun(commandLine string, quietErrors, isCheck bool) (int, error) {
 		}
 	}
 
-	// display errors when exit code != 0
-	if !quietErrors {
-		if exitCode != 0 {
-			log.Printf("%s\n%s", commandLine, output)
-		}
-	}
-
-	return exitCode, nil
+	return exitCode, stdo, stde, nil
 }
 
 func InitializeFirewall() error {
@@ -173,7 +170,11 @@ func InitializeFirewall() error {
 
 	// this Docker-added rule must be disposed, see https://github.com/docker/docker/issues/6034#issuecomment-58742268
 	rule := "FORWARD -o docker0 -j " + DOCKER_CHAIN
-	if RuleExists(rule) {
+	exists, err := RuleExists(rule)
+	if err != nil {
+		return err
+	}
+	if exists {
 		err := internalDelete(rule, false)
 		if err != nil {
 			return err
@@ -508,28 +509,47 @@ func recordRule(container *docker.Container, iptRule *ActiveIptablesRule) error 
 	return c.Save()
 }
 
+func HasAnyRule() (bool, error) {
+	return false, nil
+}
+
 // check if rule exists
-func RuleExists(rule string) bool {
-	exitCode, err := iptablesRun("--wait -C "+rule, true, true)
+func RuleExists(rule string) (bool, error) {
+	exitCode, stdo, stde, err := iptablesRun("--wait -C "+rule, true)
 	if err != nil {
-		panic(fmt.Sprintf("iptables: %s", err))
+		return false, err
 	}
-	return exitCode == 0
+	if exitCode == 1 {
+		return false, nil
+	}
+	if exitCode == 0 {
+		return true, nil
+	}
+	// unexpected exit code
+	fmt.Fprintln(os.Stdout, stdo)
+	fmt.Fprintln(os.Stderr, stde)
+	return false, errors.New("cannot determine if rule exists")
 }
 
 func internalAppend(containerId, rule string) error {
-	if RuleExists(rule) {
+	exists, err := RuleExists(rule)
+	if err != nil {
+		return err
+	}
+	if exists {
 		fmt.Printf("docker-fw: iptables(%s): rule '%s' already exists, not appending\n", containerId, rule)
 		return nil
 	}
 
 	parts := strings.SplitN(rule, " ", 2)
 	// now append rule
-	exitCode, err := iptablesRun(fmt.Sprintf("--wait -A %s %s", parts[0], parts[1]), false, false)
+	exitCode, stdo, stde, err := iptablesRun(fmt.Sprintf("--wait -A %s %s", parts[0], parts[1]), false)
 	if err != nil {
 		panic(fmt.Sprintf("iptables(%s): %s", containerId, err))
 	}
 	if exitCode != 0 {
+		fmt.Fprintln(os.Stdout, stdo)
+		fmt.Fprintln(os.Stderr, stde)
 		return errors.New(fmt.Sprintf("iptables(%s): cannot append rule '%s'", containerId, rule))
 	}
 
@@ -537,18 +557,24 @@ func internalAppend(containerId, rule string) error {
 }
 
 func internalInsert(pos int, rule string) error {
-	if RuleExists(rule) {
+	exists, err := RuleExists(rule)
+	if err != nil {
+		return err
+	}
+	if exists {
 		fmt.Printf("docker-fw: iptables: rule '%s' already exists, not inserting\n", rule)
 		return nil
 	}
 
 	parts := strings.SplitN(rule, " ", 2)
 	// now insert rule
-	exitCode, err := iptablesRun(fmt.Sprintf("--wait -I %s %d %s", parts[0], pos, parts[1]), false, false)
+	exitCode, stdo, stde, err := iptablesRun(fmt.Sprintf("--wait -I %s %d %s", parts[0], pos, parts[1]), false)
 	if err != nil {
-		panic(fmt.Sprintf("iptables: %s", err))
+		return err
 	}
 	if exitCode != 0 {
+		fmt.Fprintln(os.Stdout, stdo)
+		fmt.Fprintln(os.Stderr, stde)
 		return errors.New("cannot insert iptables rule")
 	}
 
@@ -557,12 +583,16 @@ func internalInsert(pos int, rule string) error {
 
 func internalDelete(rule string, quiet bool) error {
 	// now insert rule
-	exitCode, err := iptablesRun("--wait -D "+rule, quiet, false)
+	exitCode, stdo, stde, err := iptablesRun("--wait -D "+rule, false)
 	if err != nil {
 		// unexpected failure while running external command
-		panic(fmt.Sprintf("os.Exec(): %s", err))
+		return err
 	}
 	if exitCode != 0 {
+		if !quiet {
+			fmt.Fprintln(os.Stdout, stdo)
+			fmt.Fprintln(os.Stderr, stde)
+		}
 		return errors.New("cannot delete iptables rule")
 	}
 
@@ -620,7 +650,11 @@ func ReplayRules(containerIds []string, dryRun bool) (int, error) {
 			if rule != oldRule {
 				// first, (attempt to) remove old rule
 				if dryRun {
-					if RuleExists(oldRule) {
+					exists, err := RuleExists(oldRule)
+					if err != nil {
+						return 5, err
+					}
+					if exists {
 						fmt.Printf("docker-fw: iptables(%s): would delete rule '%s'\n", container.Name[1:], oldRule)
 						hasChanges = true
 					}
@@ -631,7 +665,11 @@ func ReplayRules(containerIds []string, dryRun bool) (int, error) {
 
 			// check if new rule is already there
 
-			if !RuleExists(rule) {
+			exists, err := RuleExists(rule)
+			if err != nil {
+				return 6, err
+			}
+			if exists {
 				//fmt.Printf("iptables(%s): rule '%s' does not exist\n", container.Name[1:], rule)
 
 				// insert or append, depending on destination chain
