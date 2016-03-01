@@ -35,7 +35,8 @@ docker-fw is licensed under GNU GPL version 2, see [LICENSE](LICENSE).
 Building
 ========
 
-Running the ``make`` command should suffice. Make sure you have set your ``GOPATH`` correctly.
+Running the ``make`` command should suffice. The Makefile will use a locally-generated `GOPATH` without populating it with any package; all source code
+dependencies are submodules under `vendor/`.
 
 Actions
 ========
